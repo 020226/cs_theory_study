@@ -1,11 +1,11 @@
 # 스프링부트 기초 수업 정리
-[강의링크](https://www.youtube.com/watch?v=MDf6Q8TDHoo)
-[수업페이지](https://www.slog.gg/p/13890)
+[강의링크](https://www.youtube.com/watch?v=MDf6Q8TDHoo)\
+[수업페이지](https://www.slog.gg/p/13890)\
 [점프 투 스프링부트](https://wikidocs.net/book/7601)
 
 ### 목차
-[0. 세팅](#0-세팅)
-[1.JPA, ORM 개념 설명](#1-jpa-orm-개념-설명)
+[0. 세팅](#0-세팅)\
+[1.JPA, ORM 개념 설명](#1-jpa-orm-개념-설명)\
 
 ---
 ### 0. 세팅
