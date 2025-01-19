@@ -156,9 +156,10 @@ public class Question {
   private LocalDateTime createDate; // DATETIME
   // CascadeType.REMOVE : 질문이 삭제되면 답변도 같이 삭제된다.
   @OneToMany(mappedBy = "question", cascade = CascadeType.REMOVE)
+  // @Transactional을 사용하고 싶지 않다면 @OneToMany(mappedBy = "question", cascade = CascadeType.REMOVE, fetch = FetchType.EAGER)
   private List<Answer> answerList = new ArrayList<>();
 
-  // 외부에서 answerList 필드에 접근하는 것을 차단
+  // 외부에서 answerList 필드에 접근하는 것을 차단 = 캡슐화
   public void addAnswer(Answer a) {
     a.setQuestion(this); // Question 객체에 Answer 추가
     answerList.add(a); // Answer 객체에 Question 설정
@@ -172,8 +173,10 @@ public class Question {
 
 @Id 애너테이션
 - id 속성에 적용한 @Id 애너테이션은 id 속성을 기본키로 지정한다.
+
 @GeneratedValue 애너테이션
 - 데이터를 저장할 때 해당 속성에 값을 일일이 입력하지 않아도 자동으로 1씩 증가하여 저장된다.
+
 @Column 애너테이션
 - 엔티티의 속성은 테이블의 열 이름과 일치하는데 열의 세부 설정을 위해 @Column 애너테이션을 사용한다.
 
@@ -206,6 +209,79 @@ M:N(Many-to-Many) : 여러 엔티티가 다수의 엔티티와 관계를 맺는�
 10. @Transactional = 자동 롤백, @Rollback(false)
 11. 정리
 
+#### 데이터 조회 관련 메서드 조합
+|항목|예제|설명|
+|-----|---|---|
+|And|findBySubjectAndContent(String subject, String content)|여러 컬럼을 and 로 검색|
+|Or|findBySubjectOrContent(String subject, String content)|여러 컬럼을 or 로 검색|
+|Between|findByCreateDateBetween(LocalDateTime fromDate, LocalDateTime toDate)|컬럼을 between으로 검색|
+|LessThan|findByIdLessThan(Integer id)|작은 항목 검색|
+|GreaterThanEqual|findByIdGraterThanEqual(Integer id)|크거나 같은 항목 검색|
+|Like|findBySubjectLike(String subject)|like 검색|
+|In|findBySubjectIn(String[] subjects)|여러 값중에 하나인 항목 검색|
+|OrderBy|findBySubjectOrderByCreateDateAsc(String subject)|검색 결과를 정렬하여 전달|
+
+#### And(여러 칼럼을 and로 검색): findBySubjectAndContent
+```sql
+SELECT *
+FROM question
+WHERE subject = ?
+AND content = ?
+```
+#### Or(여러 컬럼을 or로 검색): findBySubjectOrContent
+```sql
+SELECT *
+FROM question
+WHERE subject = ?
+OR content = ?
+```
+#### Between(컬럼을 between으로 검색): findByCreateDateBetween
+```sql
+SELECT *
+FROM question
+WHERE create_date BETWEEN ? AND ?
+```
+#### LessThan(작은 항목 검색): findByIdLessThan
+```sql
+SELECT *
+FROM question
+WHERE id < ?
+```
+#### GreaterThanEqual(크거나 같은 항목 검색): findByIdGraterThanEqual
+```sql
+SELECT *
+FROM question
+WHERE id >= ?
+```
+#### Like(like 검색): findBySubjectLike
+```sql
+SELECT *
+FROM question
+WHERE subject LIKE ?
+```
+#### In(여러 값중에 하나인 항목 검색): findBySubjectIn
+```sql
+-- IN을 사용하면 이렇게 편리하게 작성할 수 있습니다.
+SELECT *
+FROM question
+WHERE subject IN (?, ?);
+
+-- 참고로 IN 없이 아래처럼 작성해야 합니다. IN 최고!
+SELECT *
+FROM question
+WHERE subject = ? 
+OR subject = ?;
+```
+#### OrderBy(검색 결과를 정렬하여 전달): findBySubjectOrderByCreateDateAsc
+```sql
+SELECT *
+FROM question
+WHERE subject = ?
+ORDER BY create_date ASC
+```
+
+---
+
 생성한 QuestionRepository 인터페이스를 리포지터리로 만들기 위해 JpaRepository 인터페이스를 상속한다.
 JpaRepository는 JPA가 제공하는 인터페이스 중 하나로 CRUD 작업을 처리하는 메서드들을 이미 내장하고 있어 데이터 관리 작업을 좀 더 편리하게 처리할 수 있다.
 - interface로 만들면 @Repository가 생략되어 있음
@@ -236,7 +312,8 @@ public interface AnswerRepository extends JpaRepository<Answer, Integer> {
 ```
 
 findBy + 엔티티의 속성명(예를 들어 findBySubject)과 같은 리포지터리의 메서드를 작성하면 입력한 속성의 값으로 데이터를 조회 가능
-src/test/../QnaServiceApplicationTests.jav
+
+src/test/../QnaServiceApplicationTests.java
 ```java
 @SpringBootTest // 스프링 부트의 테스트 클래스임을 의미
 class QnaServiceApplicationTests {
@@ -268,7 +345,8 @@ class QnaServiceApplicationTests {
 
     Answer a1 = new Answer();
     a1.setContent("네 자동으로 생성됩니다.");
-    q2.addAnswer(a1); // 질문과 답변을 한 로직을 통해서 처리    a1.setCreateDate(LocalDateTime.now());
+    q2.addAnswer(a1); // 질문과 답변을 한 로직을 통해서 처리    
+    a1.setCreateDate(LocalDateTime.now());
     answerRepository.save(a1);
   }
   @Test
@@ -367,7 +445,7 @@ class QnaServiceApplicationTests {
     assertTrue(oq.isPresent());
     Question q = oq.get();
     q.setSubject("수정된 제목");
-    questionRepository.save(q);
+    questionRepository.save(q); // update가 일어난 것
   }
   /*
 	DELETE
@@ -433,18 +511,32 @@ class QnaServiceApplicationTests {
     Answer a = oa.get();
     assertEquals(2, a.getQuestion().getId());
   }
+
+  /*
+    # EAGER를 사용한 경우
+	SELECT Q.*, A.*
+	FROM question AS Q
+	LEFT JOIN answer AS A
+	on Q.id = A.question_id
+	WHERE Q.id = ?;
+	*/
   // 테스트 코드에서는 Transactional을 붙여줘야 한다.
   // findById 메서드를 실행하고 나면 DB가 끝어지기 때문에
   // Transactional 어노테이션을 사용하면 메서드가 종료될 때까지 DB연결이 유지된다.
-  @Transactional
+  // 테스트 + @Transactional = 자동 롤백, @Rollback(false)
+  @Transactional // 메서드 내에서 트랜잭션이 유지된다! 실제 서버에서 JPA 프로그램들을 실행할 때는
+  // DB 세션이 종료되지 않아 이와 같은 오류가 발생하지 않는다.
+  // DB 세션이란 스프링 부트 애플리케이션과 데이터베이스 간의 연결을 뜻한다.
   @Test
   @DisplayName("질문을 통해 답변 찾기")
+  @Rollback(false) // 테스트 메서드가 끝난 후에도 트랜젝션이 롤백되지 않고 커밋된다.
   void t011() {
     // SQL : SELECT * FROM question WHERE id = 2;
     Optional<Question> oq = questionRepository.findById(2);
     assertTrue(oq.isPresent());
     Question q = oq.get();
-    List<Answer> answerList = q.getAnswerList();
+    // SQL : SELECT * FROM answer WHERE question_id = 2;
+    List<Answer> answerList = q.getAnswerList();  // DB 통신이 끊긴 뒤 answer를 가져 옴 => 실패 - @Transactional 도입
     assertEquals(1, answerList.size());
     assertEquals("네 자동으로 생성됩니다.", answerList.get(0).getContent());
   }
@@ -455,22 +547,63 @@ class QnaServiceApplicationTests {
 - 하지만 @Autowired 애너테이션을 해당 변수에 적용하면 스프링 부트가 questionRepository 객체를 자동으로 만들어 주입한다.
 - 테스트 코드 작성 시에만 @Autowired를 사용하고 실제 코드 작성 시에는 생성자를 통한 객체 주입 방식을 사용
 
+**@Transactional `LAZY`와 `EAGER`**
 
-강의 21강
-교재 2-05
-까지 완료
+@Transactional: 트랜잭션 시작, 커밋, 롤백이 자동으로 관리됨
 
-
-
-
-
-
+커밋과 롤백(테스트 + @Transactional = 자동 롤백, @Rollback(false))
+- @Transactional이 붙으면 롤백된다. 모든 데이터가 db에 저장되어 커밋되는 형태가 트랜젝션이고,
+- 트랙젝션이 부튼 테스트 케이스의 경우 커밋이 되지 않는다 = 데이터가 저장되지 않는다
+- 데이터를 저장시키고 싶다면? @Rollback(false)를 붙여주면 됨
 
 
+이렇게 데이터를 필요한 시점에 가져오는 방식을 **지연(Lazy) 방식**이라고 한다. 
+이와 반대로 q 객체를 조회할 때 미리 answer 리스트를 모두 가져오는 방식은 
+**즉시(Eager) 방식**이라고 한다. @OneToMany, @ManyToOne 애너테이션의 옵션으로 
+**fetch=FetchType.LAZY 또는 fetch=FetchType.EAGER**처럼 가져오는 방식을 설정할 수 있다.
 
+```
+@Transactional을 사용하고 싶지 않다면 Question 클래스에
+@OneToMany(mappedBy = "question", cascade = CascadeType.REMOVE, fetch = FetchType.EAGER) 사용
+```
 
+- LAZY: 지연 로딩
+  - @OneToMany, @ManyToOne -> fetch=FetchType.LAZY(질문이 답변에 접근하기 전까지 데이터베이스를 로딩시키지 않음)
+- EAGER: 즉시 로딩
+  - fetch=FetchType.EAGER를 통해 연관된 엔티티를 즉시 로딩. 
+  - 즉시 db에서 연관된 데이터를 가져옴
+- 트랜잭션: 데이터베이스 작업을 묶어서 처리하는 단위
+  - 모든 작업이 성공한 경우 커밋하여 데이터 저장
+    - 커밋 = 데이터 저장
+  - 작업 중 문제가 발생하면 롤백해서 변경 사항을 취소
+    - 롤백 = 변경사항을 저장 없이 취소 -> 데이터 일관성 유지 가능
 
+LEFT JOIN vs. INNER JOIN
+- INNER JOIN: 교집합(공통된 데이터를 포함하여 가져옴)
+- LEFT JOIN: 공통된 데이터가 아닌 데이터도 누락시키지 않고 가져옴
+- 예시) 질문 데이터는 1, 답변 데이터는 1, 2가 존재. 질문 1과 답변 2은 서로 참조 관계.
+  - INNER JOIN: 질문1, 답변2만 가져옴. 답변1은 누락됨.
+  - LEFT JOIN: 질문1, 답변1, 2 모두 가져옴
 
+#### 리포지터리 총 정리
+MVC 구조
+
+Model
+  - Service
+  - Repository: DB와 소통하는 창구, SpringBoot JPA가 쿼리를 만들어줌
+    - Repository의 JPA는 여러 가지 메서드를 가지고 있다.(findAll 등)
+      - CrudRepository가 내장되어 있어 findById(), save(), findAll() 등을 사용할 수 있음
+      - findBy~ 메서드들은 JPA가 내부적으로 사용할 수 있게 구현해뒀음(JPA의 룰이다)
+      - 잘 모르겠으면 `Baeldung`에 검색이나 ai에 질문
+View
+Controller
+  - db와 소통해서는 절대 안됨. repository를 통해야 됨.
+
+Repository 과정:
+SpringBoot JPA가 쿼리를 만들어서 DB에 넘기면 쿼리의 결과를 받아와 Controller 단에서 확인 후 View에 전달
+
+데이터가 있는데 save를 하는 것 = update가 일어나는 것
+findBy~: SELECT문
 
 
 
