@@ -58,7 +58,7 @@ spring:
       enabled: always # 콘솔 색상 변경
   thymeleaf:
     cache: false # 타임리프 캐시 끄기
-    prefix: file:src/main/resources/templates/ # 타임리프 캐시 끄기(이 설정을 해야 꺼짐)
+    prefix: classpath:/templates/ # file:src/main/resources/templates/ <- 이유는 모르겠으나 오류
     devtools:
       livereload:
         enabled: true
@@ -605,9 +605,85 @@ SpringBoot JPA가 쿼리를 만들어서 DB에 넘기면 쿼리의 결과를 받
 데이터가 있는데 save를 하는 것 = update가 일어나는 것
 findBy~: SELECT문
 
+### 5. 템플릿 설정하기
+
+**템플릿**은 자바 코드를 삽입할 수 있는 HTML 형식의 파일이다.
+스프링부트는 템플릿 엔진을 지원하고 템플릿 엔진에는 Thymeleaf, Mustache, Groovy, Freemarker, Velocity 등이
+있는데 스프링 진영에서는 타임리프 템플릿 엔진을 추천한다.
+
+타임리프 설치하기(`build.gradle`파일 수정)
+```
+(... 생략 ...)
+
+dependencies {
+    (... 생략 ...)
+    implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+    implementation 'nz.net.ultraq.thymeleaf:thymeleaf-layout-dialect'
+}
+
+(... 생략 ...)
+```
+
+http://localhost:8080/ 접속하면 /../src/main/resources/static/index.html 가 루트 경로의 페이지로 보여지게 된다.
+static: 정적 리소스. 
+
+템플릿 규칙: /../src/main/resources/templates 안에 작성해주어야 한다!!
 
 
+/../src/main/resources/templates/question_list.html
+```html
+<h1>질문 리스트</h1>
+```
 
+/../boundedContext/home/question/QuestionController
+```java
+@Controller
+public class QuestionController {
+  @GetMapping("/question/list")
+    public String list() {
+      return "question_list"; // question_list.html 템플릿 파일 이름 리턴
+    }
+}
+```
+**템플릿을 사용하면 @ResponseBody를 애너테이션은 사용해선 안 된다!**
+@ResponseBody는 화면에 리턴값을 띄워달라는 의미이기 때문에 템플릿 파일을 보여주지 않으므로 사용 금지.
+@ResponseBody를 사용할 시 문자열 question_list가 그대로 리턴됨
+
+
+#### HTML 표 만들기
+
+| id | subject | content |
+|----|---------|---------|
+| 1  | sbb가 무엇인가요?| sbb에 대해서 알고 싶습니다.|
+| 2  | 스프링부트 모델 질문입니다.	| id는 자동으로 생성되나요?|
+```html
+<table border="1">
+	<colgroup>
+		<col width="60px">
+		<col width="250px">
+		<col width="250px">
+	</colgroup>
+	<thead>
+		<tr>
+			<th>id</th>
+			<th>subject</th>
+			<th>content</th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr>
+			<td>1</td>
+			<td>sbb가 무엇인가요?</td>
+			<td>sbb에 대해서 알고 싶습니다.</td>
+		</tr>
+		<tr>
+			<td>2</td>
+			<td>스프링부트 모델 질문입니다.</td>
+			<td>id는 자동으로 생성되나요?</td>
+		</tr>
+	</tbody>
+</table>
+```
 
 
 
