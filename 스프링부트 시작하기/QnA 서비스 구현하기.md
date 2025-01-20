@@ -1,4 +1,7 @@
-# 스프링부트 기초 수업 정리
+# 스프링부트 기초 수업 정리 - 중지
+
+## 주요 내용은 아래 `점프투스프링부트` 교재 참고하기!
+
 [강의링크](https://www.youtube.com/watch?v=MDf6Q8TDHoo)\
 [수업페이지](https://www.slog.gg/p/13890)\
 [점프 투 스프링부트](https://wikidocs.net/book/7601)
@@ -8,6 +11,193 @@
 [1.JPA, ORM 개념 설명](#1-jpa-orm-개념-설명)\
 
 ---
+### 기본 개념 정리
+엔티티(Entity)의 개념:
+
+- 엔티티는 데이터베이스의 테이블에 해당하는 객체로, 애플리케이션에서 다루는 데이터의 구조를 정의한다.
+
+엔티티(Entity)의 특징:
+
+- 각 엔티티는 고유 ID를 가지고 데이터베이스의 레코드를 객체 형태로 표현한다.
+
+엔티티(Entity)의 사용 이유:
+
+- 엔티티를 사용하면 데이터베이스와 상호작용을 객체 형태로 처리하여 가독성과 유지보수성에 이점이 있다.
+- JPA를 통한 엔티티와 데이터베이스 간의 매핑을 자동 처리라는 이점이 있다.
+
+리포지터리(Repository)의 개념:
+
+- 데이터베이스와 상호작용을 추상화하는 인터페이스이다. CRUD 작업을 수행하는 메서드를 제공한다.
+
+리포지터리(Repository)의 역할:
+
+- 데이터 저장 및 조회 메서드를 제공하고 메서드 이름을 기반으로 자동으로 쿼리를 생성할 수 있다.
+
+리포지터리(Repository)의 특징:
+
+- JpaRepository 인터페이스를 상속받아 CRUD 메서드를 자동으로 사용한다.
+
+리포지터리(Repository)의 사용 이유:
+
+- 복잡한 SQL 쿼리를 작성하지 않아도 데이터에 접근할 수 있다는 이점이 있다.
+
+엔티티와 리포지터리의 관계
+
+- 엔티티와 리포지터리는 스프링부트에서 DB와의 상호작용을 관리하는 구성 요소이다.
+  - 엔티티는 DB의 테이블 구조를 나타내고, 데이터 속성과 관계를 정의한다.
+  - 리포지터리는 이 엔티티 객체의 CRUD 작업을 하고 엔티티에 대한 데이터 접근을 추상화하여 제공한다.
+
+간단한 데이터베이스 연동 흐름
+
+1. 엔티티 생성: 비즈니스 로직에서 필요한 데이터를 담기 위해 엔티티 객체를 생성한다.
+2. 리포지터리 호출: 생성된 엔티티를 저장하거나 조회하기 위해 리포지터리 메서드를 호출한다.
+3. 데이터베이스 작업: 리포지터리는 JPA를 통해 데이터베이스와 연결되어 요청된 작업을 수행한다.
+4. 결과 반환: 데이터베이스에서 작업된 결과를 리포지터리가 반환하여 필요한 데이터를 사용할 수 있게 된다.
+
+예제 코드 작성(게시판) + 엔티티 정의 + JpaRepository 인터페이스의 주요 기능 사용법
+
+게시글을 나타내는 Post 엔티티 정의
+
+```java
+import javax.persistence.*;
+@Entity // 해당 클래스가 엔티티임을 나타낸다.
+@Data
+public class Post {
+    @Id // 엔티티의 고유 식별자 지정
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    // id 자동 생성
+    private Long id;
+
+    @Column(nullable = false) // 필드와 데이터베이스 컬럼 간의 맵핑
+    private String title;
+
+    @Column(nullable = false)
+    private String content;
+   }
+```
+
+Post 엔티티를 관리하는 PostRepository 정의
+
+```java
+// Ver1. 기본 리포지터리 정의
+import org.springframework.data.jpa.repository.JpaRepository;
+public interface PostRepository extends JpaRepository<Post, Long> {
+}
+
+// Ver2. 사용자 정의 메서드
+// 메서드 이름을 기반으로 자동으로 쿼리를 생성하는 방식
+// 특정 조건에 맞는 데이터를 검색할 수 있다
+// 메서드 이름의 규칙을 따르면 JPA가 쿼리를 자동으로 생성
+public interface PostRepository extends JpaRepository<Post, Long> {
+    // 이름으로 조회
+    PostfindByName(String name);
+}
+```
+
+리포지터리를 통해 게시글을 저장, 조회하는 PostService 클래스 작성
+
+```java
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+public class PostService {
+    @Autowired
+    private PostRepository postRepository;
+    // 게시글 저장 - 엔티티를 저장하거나 업데이트한다
+    public Post savePost(Post post) { return postRepository.save(post); }
+    // 모든 게시글 조회 - 주어진 ID로 엔티티를 조회한다
+    public List<Post> getAllPosts() { return postRepository.findAll(); }
+    // 게시글 삭제- 주어진 ID로 엔티티를 삭제한다
+    public void deletePost(Long id) {
+        postRepository.deleteById(id);
+    }
+}
+```
+
+애플리케이션 시작
+
+```java
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.stereotype.Component;
+
+@Component
+public class DataLoader implements CommandLineRunner {
+    private final PostService postService;
+
+    public DataLoader(PostService postService) {
+        this.postService = postService;
+    }
+
+    @Override
+    public void run(String... args) {
+        // 게시글 저장
+        Post post1 = new Post();
+        post1.setTitle("첫 번째 게시글");
+        post1.setContent("안녕하세요.");
+        postService.savePost(post1);
+
+        Post post2 = new Post();
+        post2.setTitle("두 번째 게시글");
+        post2.setContent("반갑습니다.");
+        postService.savePost(post2);
+
+        // 모든 게시글 조회
+        System.out.println("모든 게시글:");
+        postService.getAllPosts().forEach(post -> {
+            System.out.println(post.getTitle() + " - " + post.getContent());
+        });
+    }
+}
+```
+
+### MVC 구조
+
+- MVC(Model-View-Controller) 패턴은 애플리케이션의 구조를 분리하여 코드의 가독성과 유지보수성을 노피는 디자인 패턴이다.
+  - Model: 데이터와 비즈니스 로직을 담당한다. 데이터베이스와의 상호작용, 데이터 검증 및 비즈니스 규칙을 처리한다.
+  - View: 사용자 인터페이스를 구성하며, 사용자에게 정보를 표시하고 사용자 입력을 받는다.
+  - Controller: 사용자 요청을 처리하고, 적절한 Model과 View를 연결하여 결과를 반환한다.
+- 필요 요소들
+  - DTO (Data Transfer Object): DTO는 데이터 전송 객체로, 주로 데이터 전송을 목적으로 사용되는 객체이다. 여러 필드를 하나의 객체로 묶어 전달하기 때문에 데이터의 캡슐화를 제공한다. 또한 Controller ↔ Service, Service ↔ View 간의 데이터 전송을 용이하게 한다.
+  - Service: 비즈니스 로직을 처리하는 계층으로, Controller와 Model 사이에서 데이터 접근을 추상화한다. 비즈니스 규칙을 구현하고, 데이터의 유효성을 검증하며, 트랜잭션 관리를 수행한다.
+  - Repository: 데이터베이스와의 상호작용을 담당하는 계층으로, 데이터 CRUD 작업을 수행한다. JPA와 같은 ORM(Object-Relational Mapping) 프레임워크를 사용하여 데이터베이스에 접근할 수 있다.
+  - Validation: 입력 데이터의 유효성을 검사한다. 스프링에서는 @Valid, @NotNull, @Size 등의 어노테이션을 통해 DTO의 필드에 대한 유효성 검사를 수행한다.
+- MVC 구조 데이터 흐름
+  1. 사용자 입력: 사용자가 View에서 데이터를 입력한다.
+  2. 요청 처리: Controller가 요청을 받아 DTO로 변환한다.
+  3. 비즈니스 로직 처리: Controller는 Service를 호출하여 비즈니스 로직을 수행한다.
+  4. 데이터 저장: Service는 Repository를 통해 데이터베이스에 접근하여 데이터를 저장한다.
+  5. 응답 반환: 처리 결과를 View에 전달하여 사용자에게 결과를 표시한다.
+- Service가 필요한 이유:
+  - 비즈니스 로직과 데이터 접근 로직을 분리하여 코드의 구조를 명확히 하고 유지보수를 쉽게 한다.
+  - 즉, 새로운 기능 추가 시, 기존의 Controller와 Model을 변경하지 않고 Servcie 레이어에서만 변경할 수 있어 애플리케이션 확장성이 높아진다.
+
+### 질문1 - @Transactional이란?
+
+@Transactional은 스프링 프레임워크에서 제공하는 어노테이션으로, 메서드 또는 클래스에 트랜잭션을 적용할 수 있게 해준다. 트랜잭션은 데이터베이스에서 일어나는 작업의 단위를 정의하며, 여러 작업이 성공적으로 완료되거나 모두 롤백(취소)되어야 하는 경우에 사용된다.
+
+- @Transactional을 사용하면 트랜잭션의 시작과 끝을 명시할 수 있다. 해당 메서드가 시작될 때 트랜잭션이 시작되고, 메서드 실행이 완료되면 트랜잭션이 커밋(저장)된다. 만약 예외가 발생하면 트랜잭션은 롤백된다.
+- 데이터베이스의 일관성을 유지하기 위해 여러 작업을 하나의 트랜잭션으로 묶어 처리할 수 있다.
+
+### 질문2 - fetch=FetchType.EAGER의 의미
+
+fetch = FetchType.EAGER는 JPA(Java Persistence API)에서 엔티티의 연관 관계를 설정할 때 사용하는 옵션 중 하나이다. 연관된 엔티티를 어떻게 로드할지를 결정한다.
+
+- FetchType.EAGER를 설정하면, 해당 엔티티를 조회할 때 연관된 엔티티도 함께 즉시 로드된다. 즉, 부모 엔티티를 조회할 때 자식 엔티티도 자동으로 조회하여 메모리에 로드하게 된다.
+- EAGER 로딩을 설정한 경우, 부모 엔티티를 가져올 때 자식 엔티티가 항상 포함되므로, 사용자가 자식 엔티티에 접근할 때 추가적인 쿼리를 실행할 필요가 없다.
+
+### 질문3 - LAZY란?
+
+LAZY는 JPA(Java Persistence API)에서 엔티티의 연관 관계를 설정할 때 사용하는 옵션 중 하나로, 지연 로딩(Delayed Loading)을 의미한다. FetchType.LAZY를 설정하면, 연관된 엔티티가 실제로 필요할 때까지 로드하지 않도록 지연시키는 방식이다.
+
+- FetchType.LAZY를 설정하면, 해당 엔티티를 조회할 때 연관된 엔티티는 즉시 로드되지 않고, 실제로 해당 연관된 데이터를 접근할 때 로드된다. 즉, 부모 엔티티를 조회하더라도 자식 엔티티는 처음에는 로드되지 않는다.
+- 연관된 데이터에 접근할 때, JPA가 자동으로 추가 쿼리를 실행하여 데이터를 로드하여 필요한 시점에 로드할 수 있다.
+
+
+
+
 ### 0. 세팅
 /build.gradle
 ```
@@ -606,6 +796,7 @@ SpringBoot JPA가 쿼리를 만들어서 DB에 넘기면 쿼리의 결과를 받
 findBy~: SELECT문
 
 ### 5. 템플릿 설정하기
+~30강까지
 
 **템플릿**은 자바 코드를 삽입할 수 있는 HTML 형식의 파일이다.
 스프링부트는 템플릿 엔진을 지원하고 템플릿 엔진에는 Thymeleaf, Mustache, Groovy, Freemarker, Velocity 등이
@@ -630,27 +821,7 @@ static: 정적 리소스.
 템플릿 규칙: /../src/main/resources/templates 안에 작성해주어야 한다!!
 
 
-/../src/main/resources/templates/question_list.html
-```html
-<h1>질문 리스트</h1>
-```
-
-/../boundedContext/home/question/QuestionController
-```java
-@Controller
-public class QuestionController {
-  @GetMapping("/question/list")
-    public String list() {
-      return "question_list"; // question_list.html 템플릿 파일 이름 리턴
-    }
-}
-```
-**템플릿을 사용하면 @ResponseBody를 애너테이션은 사용해선 안 된다!**
-@ResponseBody는 화면에 리턴값을 띄워달라는 의미이기 때문에 템플릿 파일을 보여주지 않으므로 사용 금지.
-@ResponseBody를 사용할 시 문자열 question_list가 그대로 리턴됨
-
-
-#### HTML 표 만들기
+#### HTML 표 실습
 
 | id | subject | content |
 |----|---------|---------|
@@ -684,6 +855,91 @@ public class QuestionController {
 	</tbody>
 </table>
 ```
+
+
+/../src/main/resources/templates/question_list.html
+```html
+<h1>질문 리스트</h1>
+[[${questionList}]]
+<h2>[[${age}]]</h2>
+<table border="1">
+  <colgroup>
+    <col width="60px">
+    <col width="250px">
+    <col width="250px">
+  </colgroup>
+  <thead>
+  <tr>
+    <th>번호</th>
+    <th>제목</th>
+    <th>작성날짜</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+    <td>2</td>
+    <td>스프링부트 모델 질문입니다.</td>
+    <td>2024-12-21 10:08:58.783770</td>
+  </tr>
+  <tr>
+    <td>1</td>
+    <td>sbb가 무엇인가요?</td>
+    <td>2024-12-21 10:08:58.767813</td>
+  </tr>
+  </tbody>
+</table>
+```
+
+[[${questionList}]]: 타임리프 문법
+이 문법을 사용하려면 @Data의 ToString에 의해 무한 순환됨.
+현재 Question 클래스의 answerList와 Answer 클래스의 question 양방향 참조 관계이기 때문에
+Question 클래스에서는 상관 없지만 Answer 클래스에서 toString이 작동하면 무한재귀 발생 => ***StackOverflowError***
+
+
+```java
+@AllArgsConstructor
+@NoArgsConstructor
+@Data
+@Entity
+public class Answer {
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  private Integer id;
+
+  @Column(columnDefinition = "TEXT")
+  private String content;
+
+  private LocalDateTime createDate;
+
+  @ManyToOne
+  @ToString.Exclude // 무한순환참조 방지. ToString 대상에서 제외
+  private Question question; // question_id 생성
+}
+```
+
+
+/../boundedContext/home/question/QuestionController
+```java
+@Controller
+@RequiredArgsConstructor // final이 붙은 것들 요청이 들어올 때만 생성해줌
+public class QuestionController {
+  private final QuestionRepository questionRepository; // Service 만들기 전이라 리포지터리가 컨트롤러에 있는 것
+
+
+  @GetMapping("/question/list")
+  public String list(Model model) { // model은 MVC의 모델
+    List<Question> questionList = questionRepository.findAll(); // 리스트이기 때문에 전부를 가져옴 = finaAll
+    model.addAttribute("questionList", questionList); // "questionList"이란 이름으로 questionList을 화면에 뿌려줌 
+    return "question_list";
+  }
+}
+```
+**템플릿을 사용하면 @ResponseBody를 애너테이션은 사용해선 안 된다!**
+@ResponseBody는 화면에 리턴값을 띄워달라는 의미이기 때문에 템플릿 파일을 보여주지 않으므로 사용 금지.
+@ResponseBody를 사용할 시 문자열 question_list가 그대로 리턴됨
+
+
+
 
 
 
