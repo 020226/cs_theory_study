@@ -1,7 +1,7 @@
 # 스프링부트 기초 수업 정리 - 중지
 
 ## 주요 내용은 아래 `점프투스프링부트` 교재 참고하기!
-
+## 이 페이지는 `정리한 주요 개념` 위주로 학습!
 [강의링크](https://www.youtube.com/watch?v=MDf6Q8TDHoo)\
 [수업페이지](https://www.slog.gg/p/13890)\
 [점프 투 스프링부트](https://wikidocs.net/book/7601)
@@ -9,6 +9,10 @@
 ### 목차
 [0. 세팅](#0-세팅)\
 [1.JPA, ORM 개념 설명](#1-jpa-orm-개념-설명)\
+[2. 질문 답변 엔티티 생성](#2-질문-답변-엔티티-생성)\
+[3. 엔티티 종류](#3-엔티티-종류)\
+[4. 리포지터리](#4-리포지터리)\
+[5. 템플릿 설정하기](#5-템플릿-설정하기)
 
 ---
 ### 기본 개념 정리
@@ -201,6 +205,31 @@ LAZY는 JPA(Java Persistence API)에서 엔티티의 연관 관계를 설정할 
 ### 0. 세팅
 /build.gradle
 ```
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.4.1'
+	id 'io.spring.dependency-management' version '1.1.6'
+}
+
+group = 'com.sbs'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	compileOnly 'org.projectlombok:lombok'
@@ -209,12 +238,23 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
-    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	runtimeOnly 'org.mariadb.jdbc:mariadb-java-client'
 
-    testImplementation 'org.junit.jupiter:junit-jupiter'
+	testImplementation 'org.junit.jupiter:junit-jupiter'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+	implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+	implementation 'nz.net.ultraq.thymeleaf:thymeleaf-layout-dialect'
+
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.thymeleaf.extras:thymeleaf-extras-springsecurity6'
+
+	implementation 'org.commonmark:commonmark:0.21.0'
 }
+
 tasks.named('test') {
 	useJUnitPlatform()
 	jvmArgs '-Xshare:off' // JVM 아규먼트 설정
@@ -248,7 +288,7 @@ spring:
       enabled: always # 콘솔 색상 변경
   thymeleaf:
     cache: false # 타임리프 캐시 끄기
-    prefix: classpath:/templates/ # file:src/main/resources/templates/ <- 이유는 모르겠으나 오류
+    prefix: file:src/main/resources/templates/ # 타임리프 캐시 끄기(이 설정을 해야 꺼짐)
     devtools:
       livereload:
         enabled: true
@@ -256,8 +296,8 @@ spring:
         enabled: true
   datasource:
     url: jdbc:mariadb://127.0.0.1:3306/qna_service?useUnicode=true&characterEncoding=utf8&autoReconnect=true&serverTimezone=Asia/Seoul
-    username: root
-    password: 
+    username: sbsst
+    password: sbs123414
     driver-class-name: org.mariadb.jdbc.Driver
 
   jpa:
@@ -268,6 +308,11 @@ spring:
         show_sql: true # 실행되는 SQL 쿼리 확인
         format_sql: true # 출력되는 SQL을 포맷팅
         use_sql_comments: true
+  # LOGGING
+  logging:
+    level:
+      org.hibernate.orm.jdbc.bind: TRACE
+      org.hibernate.orm.jdbc.extract: TRACE
 ```
 
 홈 컨트롤러 도입
