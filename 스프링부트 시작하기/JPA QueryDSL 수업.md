@@ -135,6 +135,7 @@ scr/main/java/../boundedContext/user/entity/SiteUser.java
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
+@ToString
 public class SiteUser {
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -661,13 +662,13 @@ public class UserRepositoryImpl implements UserRepositoryCustom {
              .orderBy(siteUser.id.asc()) // ORDER BY id ASC
              .offset(pageable.getOffset()) // LIMIT {1}, ? // 페이지 시작 위치
              .limit(pageable.getPageSize()) // LIMIT ?, {1} // 페이지 크기
-             .fetchResults(); // 데이터와 총 데이터 수를 가져옴
+             .fetchResults(); // 데이터와 총 데이터 수를 가져옴 <- 총 데이터를 가져오기 때문에 데이터가 많아지면 문제가 될 수 있음(대체 방법 필요)
 
      // 결과와 totalCount를 기반으로 Page 객체 생성
      List<SiteUser> users = queryResults.getResults();
      long total = queryResults.getTotal(); // 총 데이터 수
 
-     // PageImpl : 페이징 된 데이터와 메타데이터(전체 개수, 페이지 정보 등)을 포함
+     // PageImpl(page 관련 인터페이스) : 페이징 된 데이터와 메타데이터(전체 개수, 페이지 정보 등)을 포함
      return new PageImpl<>(users, pageable, total);
   }
 }
@@ -734,13 +735,13 @@ class QslTutorialApplicationTests {
 }
 ```
 
-##### 실행되는 쿼리 정리
+##### t8 관련 실행되는 쿼리 정리
 ```sql
-# 전체 게시물 개수 카운트
+# 1. 전체 게시물 개수 카운트
 SELECT COUNT(SU.*)
 FROM site_user AS SU;
 
-# 검색 결과에 따른 게시물 카운트
+# 2. 검색 결과에 따른 게시물 카운트
 SELECT COUNT(SU.*)
 FROM site_user AS SU
 WHERE (
@@ -749,7 +750,7 @@ WHERE (
   LOWER(SU.email) LIKE '%user%' ESCAPE '!';
 );  
 
-# 검색 결과에 따른 게시물 조회
+# 3. 검색 결과에 따른 게시물 조회
 SELECT SU.* 
 FROM site_user AS SU
 WHERE (
@@ -759,6 +760,368 @@ WHERE (
 )
 ORDER BY SU.id LIMIT 1, 1; 
 ```
+
+#### LIKE 검색의 특수기호, ESCAPE 문자
+```sql
+SELECT *
+FROM site_user
+WHERE username LIKE 'user!_good' ESCAPE '!';
+
+WHERE username LIKE '100!%' ESCAPE '!'; # 출력결과 100%
+WHERE username LIKE '#aaaa%' ESCAPE '#'; # 출력결과 aaaa
+WHERE username LIKE 'user\_good' ESCAPE '\\'; # 출력결과 user good
+```
+!를 무시하고 user good으로 출력됨 
+- 검색을 했을 때 특수기호가 검색이 안됨
+- escape: 특수기호를 문자로 취급할 수 있기 위해 사용
+- % : 다수 문자
+- _ : 문자 1개 
+
+#### 정렬 조건이 DESC에 따른 검색 결과 테스트 케이스 구현
+searchQsl 메서드 하나로 ASC, DESC 구현
+
+```java
+@RequiredArgsConstructor
+public class UserRepositoryImpl implements UserRepositoryCustom {
+  private final JPAQueryFactory jpaQueryFactory;
+  // 생략
+   @Override
+   public Page<SiteUser> searchQsl(String kw, Pageable pageable) {
+      // BooleanExpression : 검색 조건을 처리하는 객체
+      // 검색 조건 (예: username, email 필드에서 keyword 포함 여부)
+      // containsIgnoreCase : 대소문자를 구분하지 않는 검색을 수행
+      BooleanExpression predicate = siteUser.username.containsIgnoreCase(kw)
+              .or(siteUser.email.containsIgnoreCase(kw));
+      // QueryDSL로 데이터 조회
+      // QueryResults : 쿼리 실행 결과와 함께 페이징을 위한 추가 정보 포함
+      JPAQuery<SiteUser> usersQuery = jpaQueryFactory
+              .selectFrom(siteUser) // SELECT * FROM site_user
+              .where(predicate) // WHERE username LIKE '%user%' OR email LIKE '%user%'
+              .offset(pageable.getOffset()) // LIMIT {1}, ? // 페이지 시작 위치
+              .limit(pageable.getPageSize()); // LIMIT ?, {1} // 페이지 크기
+            //.fatch 없이 반환값이 없어도 되도록 QueryResults<SiteUser> -> JPAQuery<SiteUser> 수정
+      
+      // pageable: 객체에 포함된 정렬 조건(sort)을 기반으로 동적 쿼리를 추가
+      for (Sort.Order o : pageable.getSort()) { // Sort.Order: 각각의 정렬 조건
+         // ORDER BY username
+         // ORDER BY email
+         PathBuilder pathBuilder = new PathBuilder(siteUser.getType(), siteUser.getMetadata());
+         usersQuery.orderBy(new OrderSpecifier(o.isAscending() ? Order.ASC : Order.DESC, pathBuilder.get(o.getProperty())));
+      }
+      // 결과와 totalCount를 기반으로 Page 객체 생성
+      List<SiteUser> users = usersQuery.fetch(); // usersQuery 결과를 반환하는 fetch를 users에 연결
+      JPAQuery<Long> usersCountQuery = jpaQueryFactory
+              .select(siteUser.count())
+              .from(siteUser)
+              .where(predicate);
+      // PageImpl : 페이징 된 데이터와 메타데이터(전체 개수, 페이지 정보 등)을 포함
+      return new PageImpl<>(users, pageable, usersCountQuery.fetchOne());   
+   }
+}
+```
+```java
+@SpringBootTest
+@Transactional 
+@ActiveProfiles("test")
+class QslTutorialApplicationTests {
+  @Autowired
+  private UserRepository userRepository;
+  // 생략
+  @Test
+  @DisplayName("검색, Page 리턴, id DESC, pageSize = 1, page = 0")
+  void t9() {
+     long totalCount = userRepository.count();
+     int pageSize = 1; // 한 페이지에 보여줄 아이템 개수
+     int totalPages = (int)Math.ceil(totalCount / (double)pageSize); // 전체 페이지
+     int page = 1; // 현재 페이지 -> 2번 째 페이지를 의미
+     String kw = "user";
+     
+     // 페이징 처리 관련 코드
+     List<Sort.Order> sorts = new ArrayList<>();
+     sorts.add(Sort.Order.desc("id")); // id 기준 내림차순
+     Pageable pageable = PageRequest.of(page, pageSize, Sort.by(sorts)); // 한 페이지당 몇 개까지 보여질 것인가
+     Page<SiteUser> usersPage = userRepository.searchQsl(kw, pageable);
+     
+     assertThat(usersPage.getTotalPages()).isEqualTo(totalPages);
+     assertThat(usersPage.getNumber()).isEqualTo(page);
+     assertThat(usersPage.getSize()).isEqualTo(pageSize);
+     
+     List<SiteUser> users = usersPage.get().toList();
+     assertThat(users.size()).isEqualTo(pageSize);
+     // page 값이 1 == 2번째 페이지를 의미
+     // 2번째 페이지는 1번 회원이 나와야 함
+     SiteUser u = users.get(0);
+     assertThat(u.getId()).isEqualTo(1L);
+     assertThat(u.getUsername()).isEqualTo("user1");
+     assertThat(u.getPassword()).isEqualTo("{noop}1234");
+     assertThat(u.getEmail()).isEqualTo("user1@test.com");
+  }
+}
+```
+
+t9 실행된 쿼리
+```sql
+select *
+where (
+    lower(su1_0.username) like '%user%' escape '!'
+    or
+    lower(su1_0.email) like '%user%' escape '!'
+)
+order by su1_0.id.desc
+limit 1,1;
+```
+
+####  페이지 자료구조에서는 왜 전체 엘리먼트 개수를 왜 필요로 할까?
+`페이지 메뉴를 그려야 하기 때문에 필요하다.`
+
+아래 쿼리는 UserRepositoryImpl의 searchQsl 중 
+정렬이 끝난 뒤에 게시물 갯수 확인하는 쿼리
+
+```sql
+JPAQuery<Long> usersCountQuery = jpaQueryFactory
+              .select(siteUser.count())
+              .from(siteUser)
+              .where(predicate);
+```
+
+페이지 자료구조에서는 왜 전체 엘리먼트 개수를 왜 필요로 할까? 
+- `페이지 메뉴를 그려야 하기 때문에 필요하다.`
+
+- pagesize : 5 => 한 화면에 보여질 개수
+- page : 1 => 2번째 페이지
+- 페이지네이션 표시(1~10)
+- 예시) 게시물이 100개라면 페이지 전환이 이루어졌을 때
+[1,10] 1-10까지 보여주고, [10, 10] 10개 건너뛰고 10개 보여주고, 
+[20, 10] 20개 건너뛰고 10개 보여줌
+- 끝 페이지 갯수를 파악하는 것이 중요(1~`10`) 끝 페이지가 10인 것을 알아야 11부터 보여줄 수 있기 때문.
+
+- 총 게시물 수 : 100
+- 한 페이지당 보여질 게시물 수 : 100
+- 페이지 메뉴 : 1개
+
+
+- 총 게시물 수 : 100
+- 한 페이지당 보여질 게시물 수 : 10
+- 페이지 메뉴 : 10개
+
+- 페이지네이션 공식 = 총 게시물 수 / 한 페이지 당 보여질 개수
+- 총 페이지 수 : 10
+- 한 페이지당 보여질 게시물 개수 : 3
+- 0p(3개), 1p(3개), 2p(3개), 3p(1개)
+- 쿼리문: LIMIT 3, 1 -> LIMIT 6, 1 -> LIMIT 9, 1
+
+
+### 8. 관심사 키워드 관련 테스트 코드
+
+#### 회원에게 관심사 키워드 추가하는 테스트케이스 추가
+`ManyToMany`를 이용해서 해결
+- 중복 등록은 무시
+- 엔티티 클래스 : InterestKeyword(interest_keyword 테이블)
+- 중간테이블도 생성되어야 함(@ManyToMany)
+- interest_keyword 테이블에 테니스, 오버워치, 헬스, 런닝에 해당하는 row 생성
+
+interest_keyword 테이블에
+1번 회원 관심사: 축구, 야구, 농구 /
+2번 회원 관심사: 러닝, 테니스, 축구
+
+interest_keyword 테이블에 1, 2번 중복 관심사 '축구'를 중복 저장하면 안됨
+```java
+@Entity
+@Setter
+@Getter
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+@ToString
+public class InterestKeyword { // 위치 boundedContext.interestKeyword.InterestKeyword.java
+  @Id
+  private String content;
+   @Override
+   public boolean equals(Object o) {
+      if (this == o) return true;
+      if (o == null || getClass() != o.getClass()) return false;
+      InterestKeyword that = (InterestKeyword) o;
+      return Objects.equals(content, that.content);
+   }
+   @Override
+   public int hashCode() {
+      return Objects.hashCode(content);
+   }
+}
+```
+
+```java
+@Entity
+@Setter
+@Getter
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+public class SiteUser {
+   @Id
+   @GeneratedValue(strategy = GenerationType.IDENTITY)
+   private Long id;
+
+   @Column(unique = true)
+   private String username;
+
+   private String password;
+
+   @Column(unique = true)
+   private String email;
+   
+   @Builder.Default
+   @ManyToMany(cascade =  CascadeType.ALL)
+   private Set<InterestKeyword> interestKeywords = new HashSet<>();
+
+   public void addInterestKeywordContent(String keywordContent) {
+      interestKeywords.add(new InterestKeyword(keywordContent));
+   }
+}
+```
+```java
+@SpringBootTest
+@Transactional 
+@ActiveProfiles("test")
+class QslTutorialApplicationTests {
+  @Autowired
+  private UserRepository userRepository;
+
+  @Test
+  @DisplayName("회원에게 관심사를 등록할 수 있다.")
+  @Rollback(false)
+  void t10() {
+    SiteUser u2 = userRepository.getQslUser(2L);
+    u2.addInterestKeywordContent("테니스");
+    u2.addInterestKeywordContent("오버워치");
+    u2.addInterestKeywordContent("헬스");
+    u2.addInterestKeywordContent("런닝");
+     u2.addInterestKeywordContent("런닝");
+
+     userRepository.save(u2);
+    }
+}
+```
+
+#### Set은 리스트와 비슷하지만 순서가 없고, 중복을 허용하지 않습니다. 
+`대신 hashCode와 equals 메서드 오버라이드가 필수`
+
+##### 숫자를 저장, 일반 데이터들은 자동으로 중복삽입금지 처리가 됨
+```java
+public class Main {
+  public static void main(String[] args) {
+    Set<Integer> number = new HashSet<>();
+    number.add(1);
+    number.add(2);
+    number.add(3);
+    number.add(4);
+    number.add(4); // 중복 된 데이터는 삽입 되지 않는다.
+
+    System.out.println(number);
+  }
+}
+```
+##### 일반객체들은 hashCode와 equals 메서드를 오버라이드 하지않는다면, 중복삽입금지 처리가 되지 않음
+Generate 쉽게 생성하는 법
+alt+insert 단축키 활용!!
+```java
+public class Main {
+  public static void main(String[] args) {
+    Set<InterestKeyword> interestKeywords = new HashSet<>();
+    interestKeywords.add(new InterestKeyword("파스타"));
+    interestKeywords.add(new InterestKeyword("파스타"));
+    interestKeywords.add(new InterestKeyword("피자"));
+    interestKeywords.add(new InterestKeyword("피자"));
+    // 객체의 주소값이 다 다르기 때문에 중복 된 데이터가 삽입된다.
+
+    System.out.println(interestKeywords.size());
+    interestKeywords.stream().forEach(System.out::println);
+  }
+}
+
+class InterestKeyword {
+  private String content;
+
+  public InterestKeyword(String content) {
+    this.content = content;
+  }
+
+  @Override
+  public String toString() {
+    return "InterestKeyword{" +
+        "content='" + content + '\'' +
+        '}';
+  }
+}
+```
+##### Set의 올바른 사용예
+- set을 사용할 때 hashCode, equals는 함께 사용해줘야 함!
+```java
+public class Main {
+  public static void main(String[] args) {
+    Set<InterestKeyword> interestKeywords = new HashSet<>();
+    interestKeywords.add(new InterestKeyword("파스타")); // 동일한 데이터는
+    interestKeywords.add(new InterestKeyword("파스타")); // 해시코드가 같다
+    interestKeywords.add(new InterestKeyword("피자"));
+    interestKeywords.add(new InterestKeyword("피자"));
+    // 객체의 주소값이 다 다르기 때문에 중복 된 데이터가 삽입된다.
+
+    System.out.println(interestKeywords.size());
+    interestKeywords.stream().forEach(System.out::println);
+
+    interestKeywords.stream().forEach(content -> {
+      System.out.println(content.hashCode()); // equals를 통해 중복 데이터 해시코드 없이 해시코드 2개만 출력
+    });
+  }
+}
+
+class InterestKeyword {
+  private String content;
+
+  public InterestKeyword(String content) {
+    this.content = content;
+  }
+
+  // 객체의 데이터가 동등한지 비교!
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
+    InterestKeyword that = (InterestKeyword) o;
+    return Objects.equals(content, that.content);
+  }
+    
+  // 해당 객체의 해시코드를 반환
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(content);
+  }
+
+  @Override
+  public String toString() {
+    return "InterestKeyword{" +
+        "content='" + content + '\'' +
+        '}';
+  }
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
