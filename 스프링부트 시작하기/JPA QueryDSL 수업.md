@@ -219,7 +219,7 @@ public interface UserRepositoryCustom {
 // QueryDSL의 구현체로 QueryDSL 관련 코드만 작성
 public class UserRepositoryImpl implements UserRepositoryCustom{
   @Override
-  public SiteUser getQslUser(Long id) {
+  public SiteUser getQslUser(Long id) { // UserRepositoryCustom 생성 후 alt+shift+p로 메서드 넣어주기
     return null;
   }
 }
@@ -936,6 +936,8 @@ interest_keyword 테이블에 1, 2번 중복 관심사 '축구'를 중복 저장
 public class InterestKeyword { // 위치 boundedContext.interestKeyword.InterestKeyword.java
   @Id
   private String content;
+  
+  // 아래 내용을 generate 해줌으로써 중복된 데이터가 들어가지 않도록 함
    @Override
    public boolean equals(Object o) {
       if (this == o) return true;
@@ -949,6 +951,11 @@ public class InterestKeyword { // 위치 boundedContext.interestKeyword.Interest
    }
 }
 ```
+- interest_keyword 테이블에 중복된 축구 항목은 하나만 들어가야 한다
+- 중복된 데이터가 들어가는 것이 아니라 하나의 데이터를 참조할 수 있도록
+- interest_keyword 테이블 항목에도 1, 2, 3 등 id가 있을 것이고
+- 회원 테이블에도 id가 존재하기 때문에
+- 중간 테이블(site_user_interest_keywords)을 만들어 중복 데이터를 다루며 두 아이디를 참조하는 테이블 구성(2번 회원이 좋아하는 항목. 단, 중복 런닝은 제거된 채로 매칭.)
 
 ```java
 @Entity
@@ -970,12 +977,14 @@ public class SiteUser {
    @Column(unique = true)
    private String email;
    
-   @Builder.Default
-   @ManyToMany(cascade =  CascadeType.ALL)
-   private Set<InterestKeyword> interestKeywords = new HashSet<>();
+   // 중간테이블 만듦 
+   @Builder.Default // 안 써주면 null이 들어감
+   @ManyToMany(cascade =  CascadeType.ALL) // SiteUser와 생성, 소멸 시점을 같이함
+   private Set<InterestKeyword> interestKeywords = new HashSet<>(); // 테스트 데이터를 만들 때 누락되어 있는 데이터임 = nullPointException 발생
+   // @Builder.Default을 붙여주면 null이 아니라 비어있는 HashSet으로 초기화가 됨
 
    public void addInterestKeywordContent(String keywordContent) {
-      interestKeywords.add(new InterestKeyword(keywordContent));
+      interestKeywords.add(new InterestKeyword(keywordContent)); // new해서 객체를 담아준다
    }
 }
 ```
@@ -986,7 +995,7 @@ public class SiteUser {
 class QslTutorialApplicationTests {
   @Autowired
   private UserRepository userRepository;
-
+  // 생략
   @Test
   @DisplayName("회원에게 관심사를 등록할 수 있다.")
   @Rollback(false)
@@ -996,8 +1005,8 @@ class QslTutorialApplicationTests {
     u2.addInterestKeywordContent("오버워치");
     u2.addInterestKeywordContent("헬스");
     u2.addInterestKeywordContent("런닝");
-     u2.addInterestKeywordContent("런닝");
-
+    u2.addInterestKeywordContent("런닝"); // 중복 된 관심사 추가 -> 데이터 반영 x
+     
      userRepository.save(u2);
     }
 }
@@ -1056,6 +1065,8 @@ class InterestKeyword {
 ```
 ##### Set의 올바른 사용예
 - set을 사용할 때 hashCode, equals는 함께 사용해줘야 함!
+- set은 리스트와 달리 순서가 존재하지 않는다
+  - map처럼 키를 입력해서 데이터를 가져옴
 ```java
 public class Main {
   public static void main(String[] args) {
@@ -1105,6 +1116,473 @@ class InterestKeyword {
   }
 }
 ```
+
+#### 빌드시에 누락된 녀석이 null이 되는게 싫다면 @Builder.Default 추가해야 한다.
+```java
+public class Main {
+  public static void main(String[] args) {
+    // @Builder : 생성자 기반으로 객체를 생성!
+    // 단점: 기본값으로 초기화된 필드가 무시될 수 있음
+
+    // @Builder.Default : 필드의 기본값을 유지 시켜줌
+    
+    SiteUser user1 = SiteUser.builder() // @Builder 를 쓰면 builer 패턴을 쓸 수 있다
+        // id를 넣지 않아도 빌더 패턴에 의해 auto_increment가 됨
+         .username("user1")
+        .password("{noop}1234")
+        .email("user1@test.com")
+         // @Builder.Default가 없다면 interestKeywords에 null이 들어간 상태 = interestKeywords를 쓰면 nullPointException이 나온다
+         // @Builder.Default를 붙여주어 interestKeywords가 null이 아니라 비어있는 HashSet으로 초기화됨
+            .build();
+
+    // 위 아래는 사실상 같은 코드이다.
+    // 위 코드에서는 null을 넣어도 @Builder.Default 있어서 초기화된 필드는 null처리 되지 않는다. 초기화 되어 interestKeywords = [] 처리 됨
+     SiteUser user2 = new SiteUser(null, "user2", null, null, null);
+
+    System.out.println(user1);
+    System.out.println(user2);
+  }
+}
+
+@Setter
+@Getter
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+class InterestKeyword {
+  String content;
+}
+
+@Setter
+@Getter
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+@ToString
+class SiteUser {
+  private Long id;
+  private String username;
+  private String password;
+  private String email;
+
+  // 컬렉션 필드(map, set, list 등)의 값이 비어있으면 
+  // @Builder.Default를 붙이지 않고 사용하면 nullPointException이 나오기 때문에 사용함 
+   @Builder.Default
+  private Set<InterestKeyword> interestKeywords = new HashSet<>();
+
+  // 사용할 때 nullPointException이 나온다
+  public void addInterestKeywordContent(String keywordContent) {
+    interestKeywords.add(new InterestKeyword(keywordContent));
+  }
+}
+```
+
+#### 런닝에 관심있어하는 회원들 검색하는 테스트케이스 추가하기
+- 처음할 때는 단계 별로 진행
+  - JOIN부터 진행해서 조인이 되는지 확인하기
+
+2번 회원의 관심있는 콘텐츠 목록(site_user_interest_keywords)
+```sql
+# QueryDSL에 의해 만들어 져야 하는 쿼리
+
+SELECT SU.* # 회원만 조회, SUIK.interest_keywords_content를 붙이면 런닝도 나옴
+FROM site_user AS SU
+INNER JOIN site_user_interest_keywords AS SUIK 
+ON SU.id = SUIK.site_user_id # site_user 중 site_user_interest_keywords 일치하는 것들 가져오기 위해 inner join
+# 여기까지는 중간테이블 이너조인까지 완료한 것
+# 테이블 [SU] <-> [중간테이블 SUIK] <-> [IK]
+# SIUK에 중복 데이터가 들어갈 수 있음
+# IK에는 중복 데이터가 들어가지 않음(콘텐츠 종류가 들어가기 때문에)
+INNER JOIN interest_keyword AS IK
+ON IK.content = SUIK.interest_keywords_content
+WHERE IK.content = '런닝';
+```
+```java
+public interface UserRepositoryCustom {
+  // 생략
+   List<SiteUser> getQslUserByInterestKeyword(String keyword);
+}
+```
+##### QueryDSL로 SiteUser 엔티티와 InterestKeyword 엔티티 조인까지는 성공
+
+```java
+@RequiredArgsConstructor
+public class UserRepositoryImpl implements UserRepositoryCustom {
+  private final JPAQueryFactory jpaQueryFactory;
+  // 생략
+  @Override
+  public List<SiteUser> getQslUserByInterestKeyword(String keyword) {
+     return jpaQueryFactory
+             .selectFrom(siteUser)
+             .innerJoin(siteUser.interestKeywords) // INNER JOIN으로 중간 테이블까지 조인이 된다
+             .fetch();
+     /*
+   t10까지 하고 dbeaver에서 실행하면 아래 쿼리 실행시킬 수 있음
+   QueryDSL로 SiteUser 엔티티와 InterestKeyword 엔티티 조인까지는 성공
+   SELECT SU.*
+   FROM site_user AS SU
+   INNER JOIN site_user_interest_keywords AS SUIK
+   ON SU.id = SUIK.site_user_id;
+     */
+  }
+}
+```
+##### Alias를 통해서 where 조건절에 조인 엔티티관련 조건 추가
+Alias - 별칭 커스텀
+- 보통 사용하지 않고 쿼리 dsl 사용하면 알아서 설정해줌
+- 아래 코드는 Alias 사용하지 않고 실행함
+```java
+@RequiredArgsConstructor
+public class UserRepositoryImpl implements UserRepositoryCustom {
+  private final JPAQueryFactory jpaQueryFactory;
+  // 생략
+  @Override
+  public List<SiteUser> getQslUserByInterestKeyword(String keyword) {
+    // 별칭 커스텀(식별하기 위해 해본 것이지 보통 사용하진 않는다)
+    // QSiteUser SU = QSiteUser.siteUser; // 별칭: su -> selectFrom(SU)
+    // QInterestKeyword SUIK = QInterestKeyword.interestKeyword; // 별칭 : suik -> innerJoin(siteUser.interestKeywords, SUIK)
+    return jpaQueryFactory
+            .selectFrom(siteUser) // SELECT * FROM site_user AS SU
+            .innerJoin(siteUser.interestKeywords, interestKeyword) // INNER JOIN site_user_interest_keywords AS SUIK
+            .where(
+                    interestKeyword.content.eq(keyword) // WHERE SUIK.content = keyword
+                   )
+             .fetch();
+  }
+}
+```
+```java
+@SpringBootTest
+@Transactional 
+@ActiveProfiles("test")
+class QslTutorialApplicationTests {
+  @Autowired
+  private UserRepository userRepository;
+  // 생략
+  @Test
+  @DisplayName("런닝에 관심이 있는 회원들 검색")
+  void t11() {
+     List<SiteUser> users = userRepository.getQslUserByInterestKeyword("런닝");
+     assertThat(users.size()).isEqualTo(1); // 회원이 하나인 상태
+     SiteUser u = users.get(0);
+     assertThat(u.getId()).isEqualTo(2L);
+     assertThat(u.getUsername()).isEqualTo("user2");
+     assertThat(u.getPassword()).isEqualTo("{noop}1234");
+     assertThat(u.getEmail()).isEqualTo("user2@test.com");
+  }
+}
+```
+
+#### no qsl, 테니스에 관심있어하는 회원들 검색하는 테스트케이스 추가 후 구현
+쿼리 dsl을 사용하지 않아도 jpa를 통해 내부적으로 동일한 쿼리가 사용됨
+- 쿼리 dsl을 무조건적으로 사용하지 않아도 된다!
+```java
+@SpringBootTest
+@Transactional 
+@ActiveProfiles("test")
+class QslTutorialApplicationTests {
+  @Autowired
+  private UserRepository userRepository;
+  // 생략
+  @Test
+  @DisplayName("no QueryDSL, 테니스에 관심이 있는 회원들 검색")
+  void t12() {
+    // getQslUserByInterestKeyword를 사용하지 않고 jpa 문법 findBy 이용
+     List<SiteUser> users = userRepository.findByInterestKeywords_content("테니스");
+     assertThat(users.size()).isEqualTo(1);
+     SiteUser u = users.get(0);
+     assertThat(u.getId()).isEqualTo(2L);
+     assertThat(u.getUsername()).isEqualTo("user2");
+     assertThat(u.getPassword()).isEqualTo("{noop}1234");
+     assertThat(u.getEmail()).isEqualTo("user2@test.com");
+  }
+}
+```
+커스텀이 아니라 UserRepository에 findByInterestKeywords_content를 만들어 no qsl
+```java
+public interface UserRepository extends JpaRepository<SiteUser, Long>, UserRepositoryCustom {
+  List<SiteUser> findByInterestKeywords_content(String kw); // 찾는 쿼리는 쿼리 dsl을 시키지 않아도 
+}
+```
+
+#### 1번 회원과 2번 회원이 공통 관심사 가질 수 있도록
+testInitData 수정
+```java
+@Configuration
+@Profile("test")
+public class TestInitData {
+   @Bean
+   CommandLineRunner init(UserRepository userRepository) {
+      return args -> {
+         SiteUser u1 = SiteUser.builder()
+                 .username("user1")
+                 .password("{noop}1234")
+                 .email("user1@test.com")
+                 .build();
+
+         SiteUser u2 = SiteUser.builder()
+                 .username("user2")
+                 .password("{noop}1234")
+                 .email("user2@test.com")
+                 .build();
+         // 위 코드가 실행될 때 interest_keyword가 없을 수도 있다
+         // 1. 위 코드를 저장한 뒤에 
+         userRepository.saveAll(Arrays.asList(u1, u2));
+
+         // SiteUser의 interestKeywords는 ManyToMany로 설정되어 있어서
+         // 야구가 u1과 u2에 중복되지 않게 저장해야 하는데
+         // 위에서 저장하지 않고 한 번에 아래 saveAll로 저장하면
+         // 중복 저장이 되어 오류 발생!
+         // ManyToMany로 회원이 있어야 키워드가 저장되기 때문
+                  
+         // 수정된 부분
+         u1.addInterestKeywordContent("야구");
+         u1.addInterestKeywordContent("농구");
+         u2.addInterestKeywordContent("등산");
+         u2.addInterestKeywordContent("캠핑");
+         u2.addInterestKeywordContent("야구");
+         // 2. interest_keyword를 저장해줘야
+         userRepository.saveAll(Arrays.asList(u1, u2));
+      };
+   }
+}
+```
+
+#### 팔로우 기능 테스트케이스 추가
+
+```java
+@Entity
+@Setter
+@Getter
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+public class SiteUser {
+   // 생략
+   
+   // set으로 만드는 이유: 나를 팔로우하는 동일한 한 사람이 둘이 될 수 없기 때문
+   // u1이 시청자고 u2가 유튜버일 때 u1이 한 번 구독하면 또다시 구독할 수 없도록 set 사용
+   @Builder.Default
+   @ManyToMany(cascade = CascadeType.ALL) // 한 사람은 많은 사람을 구독할 수 있고, 많은 사람의 팔로워를 가질 수 있음
+   private Set<SiteUser> followers = new HashSet<>();
+   public void addInterestKeywordContent(String keywordContent) {
+      interestKeywords.add(new InterestKeyword(keywordContent));
+   }
+
+   /*
+   addFollower 대신 follow 함수 사용
+   
+   public void addFollower(SiteUser follower) {
+      followers.add(follower); // 현재 사용자의 팔로워 목록에 새로운 팔로워 추가
+      // site_user_followers 중간 테이블 생성됨(followers_id, site_user_id)
+   }
+   
+   -> 현재 객체(this)의 관점에서 이루어짐. 현재 객체가 팔로워 목록(followers)에 새로운 사용자를 추가하는 방식
+   = 유튜버가 구독자를 추가하는 방식임 - 틀린 방식!
+   */
+   public void follow(SiteUser following) {
+     // follower: 나를 구독한 사람(시청자)
+     // following: 내가 구독하는 사람(유튜버)
+     following.getFollowers().add(this); // this = 사용자 = site_user
+   }
+   // -> 팔로우 객체의 팔로워 목록에 현재 객체를 추가하는 방식
+   // 구독의 관점에서 구독자가 유튜버를 추가하는 방식임
+}
+```
+```java
+@SpringBootTest
+@Transactional 
+@ActiveProfiles("test")
+class QslTutorialApplicationTests {
+  @Autowired
+  private UserRepository userRepository;
+  // 생략
+  @Test
+  @DisplayName("u2=유튜버, u1=구독자 u1은 u2의 유튜브를 구독한다.")
+  @Rollback(false)  void t13() {
+     SiteUser u1 = userRepository.getQslUser(1L);
+     SiteUser u2 = userRepository.getQslUser(2L);
+     u1.follow(u2); // u1은 u2를 구독한다.
+     userRepository.save(u2);
+  }
+}
+```
+
+#### 영속성 전이, CASCADE에 따라서 연관 엔티티가 같이 CRUD 될 수 있다.
+
+`cascade 옵션`
+: 연관된 엔티티에 대해서 저장, 삭제 등을 전파시킴 
+- PERSIST, MERGE 등의 속성을 포함하는 `ALL`
+
+키워드 입장: 1번 회원이 농구 관심 키워드 제거 -> cascade 옵션에 의해 농구 키워드도 삭제됨 = u1과 맵핑된 농구도 삭제됨
+
+부모 엔티티, 자식 엔티티
+- 부모 엔티티를 저장(삭제)할 때, 연관된 자식 엔티티도 함께 저장(삭제)
+
+유튜버 u2와 u2를 구독하는 구독자 목록이 있고,
+u1의 구독 하는 유튜버의 목록이 있을 때,
+u2가 계정을 삭제하면 자동으로 u1의 구독 유튜버 목록에서도 삭제되도록 처리해줌.
+
+#### @Transactional이 붙은 메서드 내에서는 경우에 따라서 save를 안해도 될 수도 있습니다.
+
+JPA에서는 엔티티가 영속성 컨텍스트 안에 존재한다.
+
+`영속성 컨텍스트`
+: 엔티티의 1차 캐시 역할을 하는 메모리 공간. JPA가 사용하는 임시 작업 공간.
+엔티티를 메모리에 올려 두고 관리하다가 @Transactional이 끝나는 순간 한꺼번에 데이터베이스에 반영한다.
+
+- 데이터베이스에 바로 반영하는 것이 아니라
+- Transactional은 작업을 하나로 묶어서 처리
+- Transactional을 하는 동안 잠깐 머무른 공간으로 `영속성 컨텍스트`사용
+
+```
+@Service
+class UserService() {
+   // 영속 객체: JPA가 관리하는 객체
+   // 비영속 객체: JPA가 아직 모르는 객체
+   SiteUser u = new SiteUser("user1", "1234");
+   
+   user.Repository.save(u);
+}
+   
+@Transactional // @Transactional이 붙음으로써 save 생략 가능 
+public void create(SiteUser user, String email) { // -> 시작
+   user.setEmail(email); // 더티 체킹
+   // userRepository.save(u); 생략 가능
+} // -> 끝
+// 끝나고 나서 변경사항이 생겼을 때 jpa가 알아서 @Transactional에 의해 변경해줌
+```
+그럼에도 새로운 데이터(비영속 객체 등)를 저장(t1의 경우 - 없는 데이터 추가)할 때는 save를 해줘야 한다!
+```java
+@SpringBootTest
+@Transactional 
+@ActiveProfiles("test")
+class QslTutorialApplicationTests {
+  @Autowired
+  private UserRepository userRepository;
+  // 생략
+  @Test
+  @DisplayName("u2=유튜버, u1=구독자 u1은 u2의 유튜브를 구독한다.")
+  @Rollback(false)  void t13() {
+     SiteUser u1 = userRepository.getQslUser(1L);
+     SiteUser u2 = userRepository.getQslUser(2L);
+     u1.follow(u2); // u1은 u2를 구독한다. -> 변경사항을 감지하여 jpa가 알아서 save 됨
+     // userRepository.save(u2); // @Transactional이 있기 때문에 save 안 해도 됨
+  }
+}
+```
+
+#### 트랜잭션이 시작되면, 해당 커넥션 내에서만 진행상황이 보여집니다.
+검색 - 외래키 비활성화
+
+트랜섹션을 통해 데이터를 생성하였더니 다른 Connection에서 데이터를 확인하면 데이터가 없어져있음
+- 다른 커넥션의 데이터를 해당 커넥션에서 확인하기 위해서는 `커밋`(저장) 또는 (실패하면)`롤백`을 이용하면 된다!
+```sql
+# Connection: localhost 2
+# DB 삭제, 생성, 선택
+DROP DATABASE IF EXISTS qsl;
+CREATE DATABASE qsl;
+USE qsl;
+    
+SET foreign_key_checks = 0; # 외래키 비활성화
+# DELETE 를 이용해서 삭제할 경우 1번 id를 삭제하면 id가 2번부터 생성됨
+TRUNCATE interest_keyword; # TRUNCATE을 이용하면 삭제된 id 1번부터 다시 시작 가능
+SET foreign_key_checks = 1; # 외래키 활성화
+
+START TRANSACTION;                              
+                              
+INSERT INTO interest_keyword
+SET content = '테니스';
+INSERT INTO interest_keyword
+SET content = '배구';
+
+SELECT * FROM interest_keyword; # 농구가 들어와있지 않은 것을 확인 가능
+```
+```sql
+# Connection: localhost
+USE qsl;
+SELECT * FROM interest_keyword; # 위의 커넥션에서 실행된 데이터 없음을 확인 가능
+                              
+INSERT INTO interest_keyword
+SET content = '농구';
+```
+```java
+@SpringBootTest
+@Transactional // = START TRANSACTION;
+@ActiveProfiles("test")
+class QslTutorialApplicationTests {}
+// 클래스가 끝나고 성공하면 COMMIT, 실패하면 ROLLBACK
+```
+---
+```sql
+# Connection: localhost 2
+# DB 삭제, 생성, 선택
+DROP DATABASE IF EXISTS qsl;
+CREATE DATABASE qsl;
+USE qsl;
+    
+SET foreign_key_checks = 0; # 외래키 비활성화
+# DELETE 를 이용해서 삭제할 경우 1번 id를 삭제하면 id가 2번부터 생성됨
+TRUNCATE interest_keyword; # TRUNCATE을 이용하면 삭제된 id 1번부터 다시 시작 가능
+SET foreign_key_checks = 1; # 외래키 활성화
+
+START TRANSACTION;                              
+                              
+INSERT INTO interest_keyword
+SET content = '테니스';
+INSERT INTO interest_keyword
+SET content = '배구';
+
+COMMIT; # 저장
+
+SELECT * FROM interest_keyword; # 농구가 들어와있다
+```
+
+#### 트랜잭션이 시작되면 되면, 특정경우에 다른 커넥션에서 쓰기 Lock이 걸릴 수 있습니다.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
