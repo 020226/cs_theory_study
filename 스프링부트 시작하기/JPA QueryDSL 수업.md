@@ -1539,17 +1539,237 @@ SELECT * FROM interest_keyword; # 농구가 들어와있다
 ```
 
 #### 트랜잭션이 시작되면 되면, 특정경우에 다른 커넥션에서 쓰기 Lock이 걸릴 수 있습니다.
+```sql
+SET foreign_key_checks = 0;
+TRUNCATE `site_user`;
+SET foreign_key_checks = 1;
+    
+START TRANSACTION;
+
+INSERT INTO `site_user`
+SET username = 'user1',
+`password` = '{noop}1234',
+email = 'user1@test.com';
+
+INSERT INTO `site_user`
+SET username = 'user2',
+`password` = '{noop}1234',
+email = 'user2@test.com';
+
+# 커밋 전 다른 Connection에서 INSERT문 실행하면 쓰기 ROCK
+COMMIT; # 커밋까지 해야 다른 Connection에서 사용 가능하도록 저장됨
+```
+트랜잭션이 끝나지 않은 상태에서 다른 커넥션의 데이터 쓰기가 발생할 경우 `쓰리 ROCK` 발생 
+
+`쓰기 ROCK 해제법`
+```sql
+SHOW FULL processlist; # 실행 목록을 보고 실행되지 않은 부분을 찾음
+kill 16; # 실행되지 않은 부분의 id를 kill(강제 종료)해준다
+```
+`반드시 커밋 해줘야`
+쓰기 작업(insert, delete 모두 포함하여) 해당 쓰기 작업이 수행 될 때까지 다른 커넥션의 쓰기가 진행되지 않는다!
+- 데이터를 일관성 있도록
+- 데이터베이스를 dbeaver 에서 다루면서 트랜잭션을 사용한다면 쓰기 ROCK을 주의하여 COMMIT 반드시!
+
+#### 본인은 본인을 follow 할 수 없다.
+
+유튜버: u2, 구독자: u1
+만약, u1 구독자가 유튜버가 된다면 스스로 구독할 수 있는가
+- 본인이 본인을 follow 할 수 없다
+
+```java
+@Entity
+@Setter
+@Getter
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+public class SiteUser {
+  // 생략
+
+  public void follow(SiteUser following) {
+    // 자기 자신을 구독할 수 없도록 하는 if문 3줄
+    if(this == following) return; // this(u1)이 following(자신)을 구독한다면(this와 following이 같은 객체라면)? return
+    if(following == null) return;
+    if(this.getId() == following.getId()) return; // 자기 자신의 id와 following의 id가 일치하면 return
+    
+    following.getFollowers().add(this); 
+  }
+}
+```
+```java
+@Test
+@DisplayName("u2=유튜버, u1=구독자 u1은 u2의 유튜브를 구독한다.")
+void t13() { // t13의 @Rollback(false) 지움
+  SiteUser u1 = userRepository.getQslUser(1L);
+  SiteUser u2 = userRepository.getQslUser(2L);
+
+  u1.follow(u2); // u1은 u2를 구독한다.
+}
+@Test
+@DisplayName("본인이 본인을 follow 할 수 없다.")
+void t14() {
+  SiteUser u1 = userRepository.getQslUser(1L);
+  u1.follow(u1);
+  assertThat(u1.getFollowers().size()).isEqualTo(0); 
+  // size가 1이면 자신이 자신을 구독한 것이 성립한 것이고 0이라는 것은 자신이 자신을 구독한 것이 안 된다는 뜻
+}
+```
+
+#### 특정회원을 구독한 회원들과, 특정회원이 구독한 회원들 둘다 알 수 있어야 한다. 테스트 케이스
+
+유튜버 : u2(A유튜버)
+
+A유튜버 입장에서 팔로워 B, C, D가 있고
+A유튜버가 구독자 입장에서 E, F, G를 구독할 수 있음
+
+팔로워 : 나를 구독하는 사람(B, C, D)
+
+팔로잉 : 내가 구독하는 사람, 구독 대상(E, F, G)
+
+나는 내가 구독하는 사람과 나를 구독하는 사람을 모두 알고 있다
+- 팔로워와 팔로잉 관계는 양방향 관계에서 이루어진다
+- 구독자 u1은 유튜버 u2를 구독한다. u2는 u1이 자신의 구독자임을 알고 u1은 u2가 구독한 유튜버임을 알고 있다.
 
 
+```java
+@Entity
+@Setter
+@Getter
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+public class SiteUser {
+  // 생략
+  
+  // 위치 메서드 전
+  @Builder.Default
+  @ManyToMany(cascade = CascadeType.ALL)
+  private Set<SiteUser> followings = new HashSet<>();
 
+  // 생략
+  public void follow(SiteUser following) {
+    if(this == following) return;
+    if(following == null) return;
+    if(this.getId() == following.getId()) return;
 
+    // 양방향 관계
+    // 1. 유튜버(following)이 나(follower)를 구독자로 등록
+    following.getFollowers().add(this);
 
+    // 2. 내(follower)가 유트버(following) 구독한다.
+    getFollowings().add(following);
+  }
+}
+```
+```java
+    @Test
+	@DisplayName("특정회원의 follower들과 following들을 모두 알 수 있어야 한다.")
+	@Rollback(false)
+	void t15() {
+		SiteUser u1 = userRepository.getQslUser(1L); // 구독자
+		SiteUser u2 = userRepository.getQslUser(2L); // 유튜버
+		u1.follow(u2);
+		// follower이기 때문에
+		// u1(을)를 구독하는 사람 : 0
+		assertThat(u1.getFollowers().size()).isEqualTo(0);
+		
+        // follower
+		// u2(을)를 구독하는 사람 : 1
+		assertThat(u2.getFollowers().size()).isEqualTo(1);
+		
+        // following
+		// u1이 구독중인 회원 : 1
+		assertThat(u1.getFollowings().size()).isEqualTo(1);
+		
+        // following
+		// u2가 구독중인 회원 : 0
+        assertThat(u2.getFollowings().size()).isEqualTo(0);
+	}
+```
 
+#### 키워드를 OneToMany로 변경하고, 복합키 도입
 
+하나의 키워드에 많은 사람들이 관심을 표현할 수 있다 => OneToMany로 수정
 
+ManyToMany 였기 때문에 중간 테이블이 생성되었지만 `OneToMany의 경우 중간 테이블 없이`
+- 중간 테이블 site_user_interest_keywords 없이
+- 키워드만 있는 interest_keyword만 이용해서 site_user_id만 함께 볼 수 있다면 중간 테이블 없이도 파악이 가능하다
 
+회원1과 회원2가 있을 때, 키워드에 회원번호와 키워드가 함께 나오도록 하고 싶다.
 
+- 회원 1이 축구를 좋아함
+- 회원 1이 농구를 좋아함
+- 회원 2가 캠핑을 좋아함
 
+키워드 테이블
+
+1, 축구
+
+1, 농구
+
+2,  캠핑
+
+이렇게 키워드 테이블이 나온다면 앞에 주키를 달아줄 필요가 없다.
+(주키를 이너조인해서 썼었던 반면 1:N 관계로 변경, 복합키 도입)
+- 1 회원이 축구를 좋아함의 조합은 이미 유니크하기 때문에 주키를 사용하지 않아도 됨
+
+```java
+@Entity
+@Setter
+@Getter
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+@ToString
+@EqualsAndHashCode(onlyExplicitlyIncluded = true) // 명시적으로 포함된 필드만 사용
+@IdClass(InterestKeywordId.class)
+public class InterestKeyword { // 위치 /boundedContext/interestKeyword/entity/InterestKeyword.java
+  @Id
+  @ManyToOne 
+  @EqualsAndHashCode.Include // Equals와 HashCode를 한 문장으로 쓸 수 있다
+  private SiteUser user; // user_id -> 테이블의 키워드만 들어가는 것이 아니라 어떤 유저가 그 키워드를 좋아하는지도 그 id가 매칭됨
+  
+  @Id
+  @EqualsAndHashCode.Include // content 필드만 비교 및 해시에 포함
+  private String content;
+}
+```
+
+복합키 생성 규칙
+1. InterestKeyword에 @IdClass(InterestKeywordId.class)
+2. InterestKeywordId 만들어서 implements Serializable
+3. InterestKeyword의 변수들을 그대로 복사해서 넣어줌
+4. SiteUser의 interestKeywords가 @OneToMany(cascade = CascadeType.ALL, mappedBy = "user") `mappedBy = "user"`를 참조한다는 것을 명시
+- user는 InterestKeywordId의 SiteUser user; 의 user
+5. InterestKeyword의 user에 @ManyToOne - 해당 키워드에 대해 많은 사람이 좋아할 수 있기 때문에
+- 축구 키워드는 1번 회원도, 2번 회원도, 3번 회원도 좋아할 수 있기 때문에 다대일 관계
+
+오류 발생하면 gradle -> clear -> compileJava 다시 -> 클래스마다 import 다시
+혹은 db 초기화하여 다시 run(중간 테이블이 만들어져서 안 되는 것일 수도 있음)
+```java
+// 위치 /boundedContext/interestKeyword/entity/InterestKeywordId.java
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+public class InterestKeywordId implements Serializable { // Serializable은 복합키 생성을 위한 규칙
+  private SiteUser user;
+  private String content;
+}
+```
+```java
+public class SiteUser {
+  // 생략
+  @Builder.Default
+  @OneToMany(cascade = CascadeType.ALL, mappedBy = "user") // @ManyToMany -> @OneToMany
+  private Set<InterestKeyword> interestKeywords = new HashSet<>();
+  
+  // 생략
+  public void addInterestKeywordContent(String keywordContent) {
+    interestKeywords.add(new InterestKeyword(this, keywordContent)); // 내가 좋아하는 키워드이기 때문에 this를 넣어줌
+  }
+}
+```
 
 
 
