@@ -2070,20 +2070,283 @@ orphanRemoval = true를 통해 위 쿼리가 실행됨
 
 #### 특정회원이 팔로우중인 회원들의 관심사를 중복없이 조회
 
+내가 구독하는 사람들의 관심사가 궁금하다
+-> 
+
+```java
+@Configuration
+@Profile("test")
+public class TestInitData {
+  @Bean
+  CommandLineRunner init(UserRepository userRepository) {
+    return args -> {
+      SiteUser u1 = SiteUser.builder()
+          .username("user1")
+          .password("{noop}1234")
+          .email("user1@test.com")
+          .build();
+
+      SiteUser u2 = SiteUser.builder()
+          .username("user2")
+          .password("{noop}1234")
+          .email("user2@test.com")
+          .build();
+
+      SiteUser u3 = SiteUser.builder()
+          .username("user3")
+          .password("{noop}1234")
+          .email("user3@test.com")
+          .build();
+
+      SiteUser u4 = SiteUser.builder()
+          .username("user4")
+          .password("{noop}1234")
+          .email("user4@test.com")
+          .build();
+
+      SiteUser u5 = SiteUser.builder()
+          .username("user5")
+          .password("{noop}1234")
+          .email("user5@test.com")
+          .build();
+
+      SiteUser u6 = SiteUser.builder()
+          .username("user6")
+          .password("{noop}1234")
+          .email("user6@test.com")
+          .build();
+
+      SiteUser u7 = SiteUser.builder()
+          .username("user7")
+          .password("{noop}1234")
+          .email("user7@test.com")
+          .build();
+
+      SiteUser u8 = SiteUser.builder()
+          .username("user8")
+          .password("{noop}1234")
+          .email("user8@test.com")
+          .build();
+
+      u1.addInterestKeywordContent("야구");
+      u1.addInterestKeywordContent("농구");
+
+      u2.addInterestKeywordContent("등산");
+      u2.addInterestKeywordContent("캠핑");
+      u2.addInterestKeywordContent("야구");
+
+      u3.addInterestKeywordContent("첼로");
+      u4.addInterestKeywordContent("바이올린");
+      u5.addInterestKeywordContent("베이스");
+      u6.addInterestKeywordContent("일렉기타");
+      u7.addInterestKeywordContent("트럼펫");
+      u8.addInterestKeywordContent("댄스");
+
+      userRepository.saveAll(Arrays.asList(u1, u2, u3, u4, u5, u6, u7, u8)); // PERSIST
+
+      u8.follow(u7); // 8번 회원이 7번 회원을 구독(팔로잉) 한다. -- 7번 회원의 팔로워는 8번 회원이다.
+      u8.follow(u6);
+      u8.follow(u5);
+      u8.follow(u4);
+      u8.follow(u3);
+      u7.follow(u6);
+      u7.follow(u5);
+      u7.follow(u4);
+      u7.follow(u3);
+
+      userRepository.saveAll(Arrays.asList(u1, u2, u3, u4, u5, u6, u7, u8)); // MERGE
+    };
+  }
+}
+```
+```java
+public interface UserRepositoryCustom {
+  // 생략
+  List<String> getKeywordContentsByFollowingOf(SiteUser user);
+}
+```
+```java
+@RequiredArgsConstructor
+public class UserRepositoryImpl implements UserRepositoryCustom {
+  private final JPAQueryFactory jpaQueryFactory;
+  // 생략
+  // generate 해서 생성
+  @Override
+  public List<String> getKeywordContentsByFollowingOf(SiteUser user) {
+    QSiteUser siteUser2 = new QSiteUser("SiteUser2");
+    return jpaQueryFactory
+        .select(interestKeyword.content) // 키워드 조회
+        .distinct() // 중복 제거(이미 SET 자료구조에 의해 중복은 없는 상태라 안 써도 상관없음)
+        .from(interestKeyword) // 키워드 컨텐츠 조회까지
+        .innerJoin(interestKeyword.user, siteUser) // user => user_id
+        .innerJoin(siteUser.followers, siteUser2)
+        .where(siteUser2.id.eq(user.getId()))
+        .fetch();
+  }
+}
+```
+```java
+@Test
+@DisplayName("u1은 더 이상 야구에 관심이 없습니다.")
+// 롤백 제거
+void t16() {
+  SiteUser u1 = userRepository.getQslUser(1L);
+
+  u1.removeInterestKeywordContent("야구");
+
+  u1.getInterestKeywords().forEach(System.out::println);
+}
+
+@Test
+@DisplayName("팔로우 중인 사람들의 관심사")
+void t17() {
+  // 8번 회원이 구독 중인 사람들이 관심사 조회
+  // 8번 회원은 현재 5명을 구독중
+  SiteUser u = userRepository.getQslUser(8L);
+  List<String> keywordContents = userRepository.getKeywordContentsByFollowingOf(u);
+  assertThat(keywordContents.size()).isEqualTo(5);
+
+  // 7번 회원이 구독 중인 사람들이 관심사 조회
+  u = userRepository.getQslUser(7L);
+  keywordContents = userRepository.getKeywordContentsByFollowingOf(u);
+  assertThat(keywordContents.size()).isEqualTo(4);
+}
+```
+
+UserRepositoryImpl -> `getKeywordContentByFollowingOf` 메서드
+##### 1단계: 키워드 조회(중복 제거)
+```
+jpaQueryFactory
+    .select(interestKeyword.content)
+    .distinct()
+    .from(interestKeyword)
+    .fetch();
+```
+###### 실행되는 쿼리
+```sql
+SELECT DISTINCT IK.content
+FROM interest_keyword AS IK;
+```
+
+##### 2단계: 관심사를 가지고 있는 회원 조회
+interest_keyword의 user_id와 site_user의 id가 일치하는 회원을 가져와야 관심사 회원을 한 번에 조회 가능 
+-> 이너조인!
+```
+jpaQueryFactory
+    .select(interestKeyword.content)
+    .distinct()
+    .from(interestKeyword)
+    .innerJoin(interestKeyword.user) // user => user_id로 변환됨
+    .fetch();
+```
+###### 실행되어야 하는 쿼리
+```sql
+SELECT DISTINCT IK.content
+FROM interest_keyword AS IK
+JOIN site_user AS SU
+ON SU.id = IK.user_id;
+```
+
+##### 3단계: 내가 구독하는 사람의 관심 키워드 조회
+JPA가 interestKeyword.user와 siteUser.followers이 동일한 siteUser로 명시되어 어떤 것을 선택해야 될지 모르기 때문에 alias를 통해 ,후 별칭 지정하여 siteUser를 구분지어줌
+```
+QSiteUser siteUser2 = new QSiteUser("SiteUser2");
+
+jpaQueryFactory
+    .select(interestKeyword.content)
+    .distinct()
+    .from(interestKeyword)
+    .innerJoin(interestKeyword.user, siteUser) // user_id
+    .innerJoin(siteUser.followers, siteUser2) 
+    .fetch();
+```
+###### 실행되는 쿼리
+이너조인과 조인을 동일하게 취급함
+```sql
+SELECT DISTINCT IK.content
+from interest_keyword AS IK
+JOIN site_user AS SU
+ON SU.id = IK.user_id
+JOIN site_user_followers AS SUF
+ON SU.id = SUF.site_user_id;
+```
 
 
+회원이 구독하는 사람의 관심 키워드 조회
+유튜버의 id와 site_user가 팔로우 하는 id와 일치하는지 확인
+```sql
+SELECT DISTINCT IK.content
+from interest_keyword AS IK
+JOIN site_user AS SU1
+ON SU1.id = IK.user_id
+JOIN site_user_followers AS SUF
+ON SU1.id = SUF.site_user_id
+JOIN site_user AS SU2
+ON SUF.followers_id = SU2.id;
+```
+##### 4단계 : 특정 회원이 구독하는 사람의 관심 키워드 조회
+```
+jpaQueryFactory
+    .select(interestKeyword.content)
+    .distinct()
+    .from(interestKeyword)
+    .innerJoin(interestKeyword.user, siteUser)
+    .innerJoin(siteUser.followers, siteUser2)
+    .where(siteUser2.id.eq(user.getId()))
+    .fetch();
+```
+###### 실행하려는 쿼리
+```sql
+SELECT DISTINCT IK.content
+from interest_keyword AS IK
+JOIN site_user AS SU1
+ON SU1.id = IK.user_id
+JOIN site_user_followers AS SUF
+ON SU1.id = SUF.site_user_id
+JOIN site_user AS SU2
+ON SUF.followers_id = SU2.id;
+WHERE SU2.id = 8;
+```
+###### 실행된 쿼리(JPA가 중복된 코드를 줄여주었음)
+```sql
+SELECT DISTINCT IK.content
+FROM interest_keyword AS IK
+JOIN site_user AS SU1
+ON IK.user_id = SU1.id
+JOIN site_user_followers AS SUF
+on SU1.id = SUF.site_user_id
+WHERE SUF.followers_id = 8;
+```
+#### 필요없는 조인을 제거하고 서브쿼리를 이용하여 필요한 데이터만 가져오기
+= 조인을 낭비하지 않도록 최적화
 
+`2차 쿼리 사용`
+위 쿼리와 아래 쿼리가 동일함
+```sql
+SELECT DISTINCT IK.content
+FROM interest_keyword AS IK
+JOIN site_user AS SU
+ON IK.user_id = SU.id
+WHERE 7 IN ( # 7번 회원이 구독하는 사람들 조회
+    SELECT SUF.site_user_id
+    FROM site_user_followers AS SUF
+    WHERE SU.id = SUF.site_user_id
+)
+```
 
-
-
-
-
-
-
-
-
-
-
+UserRepositoryImpl.java
+```java
+@Override
+  public List<String> getKeywordContentsByFollowingOf(SiteUser user) {
+      return jpaQueryFactory
+          .select(interestKeyword.content)
+          .distinct()
+          .from(interestKeyword)
+          .innerJoin(interestKeyword.user, siteUser) // user => user_id
+          .where(siteUser.followers.contains(user)) // 팔로워 관계를 바로 필터링
+          .fetch();
+  }
+```
 
 
 
