@@ -1327,7 +1327,7 @@ public class TestInitData {
                  .build();
          // 위 코드가 실행될 때 interest_keyword가 없을 수도 있다
          // 1. 위 코드를 저장한 뒤에 
-         userRepository.saveAll(Arrays.asList(u1, u2));
+         userRepository.saveAll(Arrays.asList(u1, u2)); // PERSIST
 
          // SiteUser의 interestKeywords는 ManyToMany로 설정되어 있어서
          // 야구가 u1과 u2에 중복되지 않게 저장해야 하는데
@@ -1342,7 +1342,7 @@ public class TestInitData {
          u2.addInterestKeywordContent("캠핑");
          u2.addInterestKeywordContent("야구");
          // 2. interest_keyword를 저장해줘야
-         userRepository.saveAll(Arrays.asList(u1, u2));
+         userRepository.saveAll(Arrays.asList(u1, u2)); // MERGE
       };
    }
 }
@@ -1665,7 +1665,7 @@ public class SiteUser {
 ```java
     @Test
 	@DisplayName("특정회원의 follower들과 following들을 모두 알 수 있어야 한다.")
-	@Rollback(false)
+	@Rollback(false) // t16 생성하면서 주석 처리하기!!
 	void t15() {
 		SiteUser u1 = userRepository.getQslUser(1L); // 구독자
 		SiteUser u2 = userRepository.getQslUser(2L); // 유튜버
@@ -1771,33 +1771,304 @@ public class SiteUser {
 }
 ```
 
+#### 테스트 회원 8명으로 증가
+InterestKeyword와의 관계가 1:N으로 바뀌었기 때문에, 쓸데없는 save 제거, 테스트 회원을 총 8명으로
+
+testInitData 수정
+```java
+@Configuration
+@Profile("test")
+public class TestInitData {
+  @Bean
+  CommandLineRunner init(UserRepository userRepository) {
+    return args -> {
+      SiteUser u1 = SiteUser.builder()
+          .username("user1")
+          .password("{noop}1234")
+          .email("user1@test.com")
+          .build();
+
+      SiteUser u2 = SiteUser.builder()
+          .username("user2")
+          .password("{noop}1234")
+          .email("user2@test.com")
+          .build();
+
+      SiteUser u3 = SiteUser.builder()
+          .username("user3")
+          .password("{noop}1234")
+          .email("user3@test.com")
+          .build();
+
+      SiteUser u4 = SiteUser.builder()
+          .username("user4")
+          .password("{noop}1234")
+          .email("user4@test.com")
+          .build();
+
+      SiteUser u5 = SiteUser.builder()
+          .username("user5")
+          .password("{noop}1234")
+          .email("user5@test.com")
+          .build();
+
+      SiteUser u6 = SiteUser.builder()
+          .username("user6")
+          .password("{noop}1234")
+          .email("user6@test.com")
+          .build();
+
+      SiteUser u7 = SiteUser.builder()
+          .username("user7")
+          .password("{noop}1234")
+          .email("user7@test.com")
+          .build();
+
+      SiteUser u8 = SiteUser.builder()
+          .username("user8")
+          .password("{noop}1234")
+          .email("user8@test.com")
+          .build();
+
+      u1.addInterestKeywordContent("야구");
+      u1.addInterestKeywordContent("농구");
+
+      u2.addInterestKeywordContent("등산");
+      u2.addInterestKeywordContent("캠핑");
+      u2.addInterestKeywordContent("야구");
+
+      // OneToMany 로 변경되어 save 한 번만 해도 됨
+      userRepository.saveAll(Arrays.asList(u1, u2, u3, u4, u5, u6, u7, u8));
+    };
+  }
+}
+```
+
+t1, t9 수정
+```java
+    @Test
+	@DisplayName("회원 생성")
+    void t1() {
+		SiteUser u9 = SiteUser.builder()
+				.username("user9")
+				.password("{noop}1234")
+				.email("user9@test.com")
+				.build();
+
+		SiteUser u10 = SiteUser.builder()
+				.username("user10")
+				.password("{noop}1234")
+				.email("user10@test.com")
+				.build();
+
+		userRepository.saveAll(Arrays.asList(u9, u10));
+	}
+  // 생략
+  @Test
+  @DisplayName("검색, Page 리턴, id DESC, pageSize = 1, page = 0")
+  void t9() {
+    long totalCount = userRepository.count();
+    int pageSize = 1; 
+    int totalPages = (int)Math.ceil(totalCount / (double)pageSize); // 전체 페이지
+    int page = 1; 
+    String kw = "user";
+
+    List<Sort.Order> sorts = new ArrayList<>();
+    sorts.add(Sort.Order.desc("id")); // id 기준 내림차순
+    Pageable pageable = PageRequest.of(page, pageSize, Sort.by(sorts)); // 한 페이지당 몇 개까지 보여질 것인가
+    Page<SiteUser> usersPage = userRepository.searchQsl(kw, pageable);
+
+    assertThat(usersPage.getTotalPages()).isEqualTo(totalPages);
+    assertThat(usersPage.getNumber()).isEqualTo(page);
+    assertThat(usersPage.getSize()).isEqualTo(pageSize);
+
+    List<SiteUser> users = usersPage.get().toList();
+    assertThat(users.size()).isEqualTo(pageSize);
+    
+    SiteUser u = users.get(0);
+
+    // 7번 회원으로 수정
+    assertThat(u.getId()).isEqualTo(7L);
+    assertThat(u.getUsername()).isEqualTo("user7");
+    assertThat(u.getPassword()).isEqualTo("{noop}1234");
+    assertThat(u.getEmail()).isEqualTo("user7@test.com");
+  }
+```
+
+8페이지
+
+총 회원 8명
+
+8 7 6 5 4 3 2 1
+0 1 2 3 4 5 6 7
+
+#### 회원간 팔로우 테스트 데이터 생성
+테스트용 팔로우 관계 생성, ManyToMany 관계의 영속성 전이를 위해서 save를 한번 더 진행
+
+팔로우는 ManyToMany 이므로 save가 두 번 필요
+
+testInitData 수정
+```java
+@Configuration
+@Profile("test")
+public class TestInitData {
+  @Bean
+  CommandLineRunner init(UserRepository userRepository) {
+    return args -> {
+      SiteUser u1 = SiteUser.builder()
+          .username("user1")
+          .password("{noop}1234")
+          .email("user1@test.com")
+          .build();
+
+      SiteUser u2 = SiteUser.builder()
+          .username("user2")
+          .password("{noop}1234")
+          .email("user2@test.com")
+          .build();
+
+      SiteUser u3 = SiteUser.builder()
+          .username("user3")
+          .password("{noop}1234")
+          .email("user3@test.com")
+          .build();
+
+      SiteUser u4 = SiteUser.builder()
+          .username("user4")
+          .password("{noop}1234")
+          .email("user4@test.com")
+          .build();
+
+      SiteUser u5 = SiteUser.builder()
+          .username("user5")
+          .password("{noop}1234")
+          .email("user5@test.com")
+          .build();
+
+      SiteUser u6 = SiteUser.builder()
+          .username("user6")
+          .password("{noop}1234")
+          .email("user6@test.com")
+          .build();
+
+      SiteUser u7 = SiteUser.builder()
+          .username("user7")
+          .password("{noop}1234")
+          .email("user7@test.com")
+          .build();
+
+      SiteUser u8 = SiteUser.builder()
+          .username("user8")
+          .password("{noop}1234")
+          .email("user8@test.com")
+          .build();
+
+      u1.addInterestKeywordContent("야구");
+      u1.addInterestKeywordContent("농구");
+
+      u2.addInterestKeywordContent("등산");
+      u2.addInterestKeywordContent("캠핑");
+      u2.addInterestKeywordContent("야구");
+
+      userRepository.saveAll(Arrays.asList(u1, u2, u3, u4, u5, u6, u7, u8)); // PERSIST
+      
+      u8.follow(u7); // 8번 회원이 7번 회원을 구독(팔로잉) 한다. -- 7번 회원의 팔로워는 8번 회원이다.
+      u8.follow(u6);
+      u8.follow(u5);
+      u8.follow(u4);
+      u8.follow(u3);
+      u7.follow(u6);
+      u7.follow(u5);
+      u7.follow(u4);
+      u7.follow(u3);
+      userRepository.saveAll(Arrays.asList(u1, u2, u3, u4, u5, u6, u7, u8)); // MERGE
+    };
+  }
+}
+```
+DBeaver 엔티티 관계도 검색하면 엔티티 관계도 보는 방법 나옴
 
 
+#### 고아객체 제거
+고아객체제거 설정을 통해서, 회원이 더 이상 관심두지 않는 키워드 제거를 쉽게 구현
 
+(Site)User는 interestKeywords 즉, 관심사가 사라지면 키워드 테이블에서도 관심 키워드가 제거가 되어야 함
 
+- 1번 회원이 더이상 야구에 관심이 없어서 관심 키워드에서 야구를 지우고자 한다면 SiteUser 안에서 interestKeywords만 제거가 되는 것이 아니라
+- 자식 엔티티 키워드 테이블(interest_keyword)의 항목도 같이 제거가 되어야 한다
+```sql
+SELECT *
+FROM site_user_followers;
 
+SELECT *
+FROM site_user_followings;
 
+# 몇 번 회원이 무엇에 관심있는지 확인 가능
+SELECT *
+FROM interest_keyword;
 
+SELECT *
+FROM site_user;
+```
 
+```java
+@Entity
+@Setter
+@Getter
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+public class SiteUser {
+  // 생략
+  @Builder.Default
+  @OneToMany(cascade = CascadeType.ALL, mappedBy = "user", orphanRemoval = true)
+  // orphanRemoval = true 부모 엔티티(유저) 입장에서 관리하던 자식 엔티티(키워드)를 자동으로 삭제한다
+  private Set<InterestKeyword> interestKeywords = new HashSet<>();
+  // 생략
+  public void removeInterestKeywordContent(String keywordContent) {
+    interestKeywords.remove(new InterestKeyword(this, keywordContent));
+  }
+  // 아래 follow 생략
+}
+```
+```java
+    @Test
+	@DisplayName("u1은 더 이상 야구에 관심이 없습니다.")
+	@Rollback(false) // t15의 롤백은 제거하고 테스트 진행을 위해 t16에 롤백
+	void t16() {
+        // 1번 회원의 관심사 야구를 지운다
+		SiteUser u1 = userRepository.getQslUser(1L);
+		u1.removeInterestKeywordContent("야구");
+    
+        // SiteUser의 interestKeywords 안에서만 제거됨을 확인 가능
+        // interest_keyword 테이블 안에는 야구가 남아있다!
+	    // 야구가 interest_keyword 테이블에서 같이 제거되도록 하고 싶다	
+      u1.getInterestKeywords().forEach(System.out::println);
+	}
+```
 
+`고아객체`
 
+1번 회원 - 농구
+~~1번 회원 - 야구~~
 
+new keyword("야구") <- 키워드 하나하나가 객체임 
+1번 회원을 지우면 야구 키워드는 `고아`가 된다
+`orphanRemoval = true`를 통해 1번 회원과 야구 키워드의 관계가 끊어지면 자동으로 야구도 삭제됨
+- 부모 자식 관계 안에서만 적용됨
+```sql
+DELETE FROM interest_keyword
+WHERE content = '야구'
+AND user_id = 1;
+```
+orphanRemoval = true를 통해 위 쿼리가 실행됨
 
+그렇다면, `CascadeType.REMOVE와 orphanRemoval = true`의 차이는 무엇일까
+- CascadeType.REMOVE: 부모 엔티티를 삭제하면 자식 엔티티도 제거
+    - 질문(부모) - 답변(자식): 질문이 삭제되면 답변도 함께 삭제가 됨
+- orphanRemoval = true: 자식 엔티티가 부모 엔티티 관계에서 고아 상태가 되었을 때 제거됨 -> 데이터베이스에 자동으로 반영되게끔 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#### 특정회원이 팔로우중인 회원들의 관심사를 중복없이 조회
 
 
 
