@@ -1,3 +1,22 @@
+## JDBC
+
+[MVN REPOSITORY](https://mvnrepository.com/)
+
+자바 프로그램 -> JDBC에 요청 -> JDBC가 MySQL과 소통
+
+자바가 DBMS와 소통하는 창구가 JDBC임
+
+pom.xml에 추가하여 JDBC 설치
+```
+<dependencies>
+    <!-- https://mvnrepository.com/artifact/mysql/mysql-connector-java -->
+    <dependency>
+        <groupId>mysql</groupId>
+        <artifactId>mysql-connector-java</artifactId>
+        <version>8.0.30</version>
+    </dependency>    
+</dependencies>
+```
 
 ## MySQL
 #### 데이터베이스
