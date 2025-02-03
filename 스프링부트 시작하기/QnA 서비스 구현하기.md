@@ -12,7 +12,12 @@
 [2. 질문 답변 엔티티 생성](#2-질문-답변-엔티티-생성)\
 [3. 엔티티 종류](#3-엔티티-종류)\
 [4. 리포지터리](#4-리포지터리)\
-[5. 템플릿 설정하기](#5-템플릿-설정하기)
+[5. 템플릿 설정하기](#5-템플릿-설정하기)\
+[스프링부트에서-transactional은-커밋과-롤백을-담당한다](#34강-스프링부트에서-transactional은-커밋과-롤백을-담당한다)\
+[fetch-전략-eager-lazy에-따른-sql-변화-설명](#35강-fetch-전략-eager-lazy에-따른-sql-변화-설명)\
+[답변-등록-버튼-만들기](#39강-답변-등록-버튼-만들기)\
+[질문을-저장하는-곳에서-처리하고-redirect-하는-방식](#41강-질문을-저장하는-곳에서-처리하고-redirect-하는-방식)\
+[질문을-저장하는-곳에서-처리하고-redirect-하지-않고-본인이-직접-템플릿-실행하여-응답하는-방식](#42강-질문을-저장하는-곳에서-처리하고-redirect-하지-않고-본인이-직접-템플릿-실행하여-응답하는-방식)
 
 ---
 ### 기본 개념 정리
@@ -984,19 +989,112 @@ public class QuestionController {
 @ResponseBody를 사용할 시 문자열 question_list가 그대로 리턴됨
 
 
+---
 
+### 34강 스프링부트에서 @Transactional은 커밋과 롤백을 담당한다.
 
+#### 트랜잭션 요약
+```
+트랜잭션 정의
+여러 작업을 하나의 단위로 묶어 처리하는 것.
 
+예시: 은행 이체
 
+1번: A 계좌에서 돈을 출금.
+2번: B 계좌에 돈을 입금.
+두 작업이 모두 성공해야 완료.
+1번 성공, 2번 실패 → 이전 상태로 롤백(되돌리기).
+@Transactional 역할
 
+작업 시작.
+문제 없으면 커밋(완료).
+오류 발생 시 롤백(되돌리기).
+```
 
+### 35강 Fetch 전략 EAGER, LAZY에 따른 SQL 변화 설명
 
+```
+Fetch 전략 
+1. EAGER (즉시 로딩)
+2. LAZY (지역 로딩)
 
+LAZY (지역 로딩)
+SELECT * FROM question WHERE id = 2;
+SELECT * FROM answer WHERE question_id = 2;
 
+EAGER (즉시 로딩)
+SELECT Q.*, A.*
+FROM question AS Q
+LEFT JOIN answer AS A
+ON Q.id = A.question_id 
+WHERE Q.id = ? 
+```
 
+### 39강 답변 등록 버튼 만들기
 
+#### 랜더링 결과
+```
+action="@{|/answer/create/${question.id}|}" -> 랜더링 안됨
 
+th:action="@{/answer/create/${question.id}}"
+ => action=/answer/create/${question.id}
 
+th:action="@{|/answer/create/${question.id}|}"
+ => action=/answer/create/1
+```
 
+### 41강 질문을 저장하는 곳에서 처리하고 redirect 하는 방식
+
+#### 처리순서
+```
+현재 URL : /question/detail/1
+폼의 textarea에 값을 "어서와"로 채우고 작성버튼 클릭
+요청 : POST/answer/create/1
+ - PAYLOAD: content: 어서와
+ - 요청처리 : AnswerController::createAnswer 액션 메서드 실행
+ - 요청처리 : Question question = questionService.getQuestion(id);
+응답 : redirect:question/detail/1
+
+요청: GET/question/detail/1
+ - 요청처리 : QuestionController::detail 액션 메서드 실행
+ - 요청처리 : Question question = questionService.getQuestion(id);
+ - 요청처리 : model.addAttribute("question", question);
+ - 요청처리 : question_detail 템플릿 실행
+ - 응답 : 템플릿에 데이터가 결합된 최종 결과물(HTML)을 고객한테 전달.
+
+최종 URL : question/detail/1
+ - 요청을 날리기 전과 똑같은 화면이 보인다.
+ ```
+
+### 42강 질문을 저장하는 곳에서 처리하고 redirect 하지 않고 본인이 직접 템플릿 실행하여 응답하는 방식
+
+```java
+@PostMapping("/create/{id}")
+public String createAnswer(Model model, @PathVariable("id") Integer id, @RequestParam(value="content") String content) {
+    Question question = questionService.getQuestion(id);
+    // TODO: 답변을 저장한다.
+    
+    model.addAttribute("question", question);
+    
+    // return "redirect:/question/detail/%s".formatted(id);
+    return "question_detail"; // QuestionController::detail 메서드에서 사용하던 템플릿이다.
+    // 이렇게 되면 고객이 다시 GET 요청할 필요가 없어진다. 위 방식과 비교해서 장단점이 있다.
+}
+```
+
+#### 처리 순서
+```
+현재 URL : /question/detail/1
+폼의 textarea에 값을 "어서와"로 채우고 작성버튼 클릭
+요청 : POST/answer/create/1
+ - PAYLOAD: content: 어서와
+ - 요청처리 : AnswerController::createAnswer 액션 메서드 실행
+ - 요청처리 : Question question = questionService.getQuestion(id);
+ - 요청처리 : model.addAttribute("question", question);
+ - 요청처리 : question_detail 템플릿 실행
+ - 응답 : 템플릿에 데이터가 결합된 최종 결과물(HTML)을 고객한테 전달.
+최종 URL : /answer/create/1
+ - 요청을 날리기 전과 똑같은 화면이 보이지만 URL이 달라진다/
+```
 
 
