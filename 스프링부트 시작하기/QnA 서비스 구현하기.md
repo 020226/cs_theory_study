@@ -20,6 +20,9 @@
 [질문을-저장하는-곳에서-처리하고-redirect-하지-않고-본인이-직접-템플릿-실행하여-응답하는-방식](#42강-질문을-저장하는-곳에서-처리하고-redirect-하지-않고-본인이-직접-템플릿-실행하여-응답하는-방식)
 
 [스프링 시큐리티](#스프링-시큐리티)
+[회원가입](#회원가입)
+[로그인](#로그인)
+[ENUM](#enum)
 
 ---
 ### 기본 개념 정리
@@ -1156,10 +1159,81 @@ public class SecurityConfig {
 ### 회원가입
 회원 가입 기능을 구현하려면 회원 정보와 관련된 데이터를 저장하고 이를 관리하는 엔티티와 리포지터리 등을 만들어야 하고, 폼과 컨트롤러와 같은 요소를 생성해 사용자로부터 입력받은 데이터를 웹 프로그램에서 사용할 수 있도록 만들어야 한다.
 
+`회원가입 실행 시 로직 순서`
+1. userController::create 메서드 실행
+2. 회원 가입 폼을 GET 방식으로 호출
+3. 폼에서 데이터 입력이 제대로 이루어 지지 않은 경우
+- 회원 가입 폼을 GET 방식으로 호출
+- 입력이 안 된 경우
+- 비밀번호가 틀린 경우
+- 중복된 이름과 이메일로 회원가입 하는 경우
+4. 폼에서 데이터가 제대로 입력되고 회원가입 버튼을 누른 경우
+5. userController::create 메서드 실행
+6. 회원 가입 폼을 POST 방식으로 데이터 처리
+7. userService::create(회원정보) 메서드가 실행
+8. userRepository::save(user) 메서드 되어 새로운 사용자 생성
+9. DB에 내부적으로 INSERT 쿼리가 실행
+10. 회원정보 생성
 
+### 로그인
 
+스프링 시큐리티를 통해 로그인을 수행하는 방법에는 여러 가지
+- 가장 간단한 방법으로 SecurityConfig.java와 같은 시큐리티 설정 파일에 사용자 ID와 비밀번호를 직접 등록하여 인증을 처리하는 메모리 방식
+- 이미 회원 가입을 통해 회원 정보를 DB에 저장했으므로 DB에서 회원 정보를 조회하여 로그인하는 방법을 사용할 것임
+  - DB에서 사용자를 조회하는 서비스(UserSecurityService.java)를 만들고 그 서비스를 스프링 시큐리티에  등록함
 
+### ENUM
 
+ENUM은 코딩을 할 때 문자열 하드코딩 및 복사 작업에서 오는 실수를 예방하기 위해 고안된 특별한 클래스 입니다.
+[강의](https://www.youtube.com/watch?v=HOCjdjZevGE&feature=youtu.be)
+
+```java
+public class Main {
+  public static void main(String[] args) {
+    /*
+    UserRole ADMIN = new UserRole("ROLE_ADMIN"); // ADMIN("ROLE_ADMIN")
+    UserRole USER = new UserRole("ROLE_USER"); // USER("ROLE_USER")
+     */
+
+    UserRole SUPER_ADMIN = UserRole.SUPER_ADMIN;
+    UserRole ADMIN = UserRole.ADMIN;
+    UserRole USER = UserRole.USER;
+
+    System.out.println(SUPER_ADMIN);
+    System.out.println(ADMIN);
+    System.out.println(USER);
+
+    System.out.println(UserRole.SUPER_ADMIN);
+    System.out.println(UserRole.ADMIN);
+    System.out.println(UserRole.USER);
+  }
+}
+
+enum UserRole {
+  SUPER_ADMIN("SUPER_ADMIN"),
+  ADMIN("ROLE_ADMIN"),
+  USER("ROLE_USER");
+
+  /*
+  public static UserRole SUPER_ADMIN = new UserRole("ROLE_SUPER_ADMIN"); // ADMIN("ROLE_ADMIN")
+  public static UserRole ADMIN = new UserRole("ROLE_ADMIN"); // ADMIN("ROLE_ADMIN")
+  public static UserRole USER = new UserRole("ROLE_USER"); // USER("ROLE_USER")
+   */
+
+  private UserRole(String value) {
+    this.value = value;
+  }
+
+  private String value;
+
+  @Override
+  public String toString() {
+    return "UserRole{" +
+        "value='" + value + '\'' +
+        '}';
+  }
+}
+```
 
 
 
