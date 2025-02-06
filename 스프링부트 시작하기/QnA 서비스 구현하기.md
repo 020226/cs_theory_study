@@ -19,6 +19,8 @@
 [질문을-저장하는-곳에서-처리하고-redirect-하는-방식](#41강-질문을-저장하는-곳에서-처리하고-redirect-하는-방식)\
 [질문을-저장하는-곳에서-처리하고-redirect-하지-않고-본인이-직접-템플릿-실행하여-응답하는-방식](#42강-질문을-저장하는-곳에서-처리하고-redirect-하지-않고-본인이-직접-템플릿-실행하여-응답하는-방식)
 
+[스프링 시큐리티](#스프링-시큐리티)
+
 ---
 ### 기본 개념 정리
 엔티티(Entity)의 개념:
@@ -1096,5 +1098,72 @@ public String createAnswer(Model model, @PathVariable("id") Integer id, @Request
 최종 URL : /answer/create/1
  - 요청을 날리기 전과 똑같은 화면이 보이지만 URL이 달라진다/
 ```
+
+
+## 스프링 시큐리티
+
+- 스프링 시큐리티(Spring Security) : 회원 가입과 로그인 기능에 필요함
+- 스프링 기반 웹 애플리케이션의 인증과 권한을 담당하는 스프링의 하위 프레임워크
+- 인증(authenticate) : 로그인과 같은 사용자의 신원을 확인하는 프로세스
+- 권한(authorize) : 인증된 사용자가 어떤 일을 할 수 있는지(어던 접근 권한이 있는지) 관리하는 것
+
+스프링시큐리티는 인증과 인가뿐 아니라 보안과 관련된 기능도 제공
+
+인증과 인가
+인증 : 신원 확인
+- 사용자가 제공한 아이디와 비밀번호가 유효한지 확인
+- 예 : 로그인 처리
+
+인가 : 권한 부여
+- 사용자가 특정 작업을 수행할 수 있는 권한 확인
+- 예 : 게시물 작성자가 게시물 수정과 삭제에 관한 권한을 가짐
+
+결론 : 스프링 시큐리티는 인증과 인가를 간단하게 구현할 수 있는 프레임워크이다.
+
+`스프링 시큐리티 설치`
+build.gradle 파일 수정
+
+```
+(... 생략 ...)
+
+dependencies {
+    (... 생략 ...)
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.thymeleaf.extras:thymeleaf-extras-springsecurity6'
+}
+
+(... 생략 ...)
+```
+
+`스프링 시큐리티 설정하기`
+SecurityConfig.java 파일 생성
+
+```java
+@Configuration // 스프링의 환경 설정 파일임을 의미
+@EnableWebSecurity // 모든 요청 URL이 스프링 시큐리티의 제어를 받도록 만듦. 스프링 시큐리티 활성화.
+public class SecurityConfig {
+  // 내부적으로 SecurityFilterChain 클래스가 동작하여 모든 요청 URL에 이 클래스가 필터로 적용되어 URL 별로 특별한 설정을 하도록
+  @Bean // SecurityFilterChain 빈을 생성
+  SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    return http.build();
+  }
+}
+```
+
+### 빈
+빈(bean)은 스프링에 의해 생성 또는 관리되는 객체를 의미한다. 우리가 지금껏 만들어 왔던 컨트롤러, 서비스, 리포지터리 등도 모두 빈에 해당한다. 또한 앞선 예처럼 @Bean 애너테이션을 통해 자바 코드 내에서 별도로 빈을 정의하고 등록할 수도 있다.
+
+### 회원가입
+회원 가입 기능을 구현하려면 회원 정보와 관련된 데이터를 저장하고 이를 관리하는 엔티티와 리포지터리 등을 만들어야 하고, 폼과 컨트롤러와 같은 요소를 생성해 사용자로부터 입력받은 데이터를 웹 프로그램에서 사용할 수 있도록 만들어야 한다.
+
+
+
+
+
+
+
+
+
+
 
 
